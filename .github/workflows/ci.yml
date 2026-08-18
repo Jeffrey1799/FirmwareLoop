@@ -20,8 +20,8 @@ jobs:
         with:
           version: '7.4'
 
-      - name: Install toolchain (cmake, ninja, gcc)
-        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build gcc
+      - name: Install toolchain (cmake, ninja, gcc, make)
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build gcc make
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -39,6 +39,9 @@ jobs:
       - name: Build firmware (clean)
         run: pwsh -NoProfile -File tools/build.ps1 -Configuration Debug -Clean -Json
 
+      - name: Build backend dispatch tests (7 backends + fake executables)
+        run: pwsh -NoProfile -File tools/test-backends.ps1 -Json
+
       - name: HIL tests (simulator mode, 12 tests)
         run: pwsh -NoProfile -File tools/test.ps1 -Json
 
@@ -55,3 +58,52 @@ jobs:
             artifacts/runs/*/pytest.xml
             artifacts/runs/*/final-report.json
           retention-days: 14
+
+  verify-windows:
+    name: verify (windows-latest, simulator)
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchain (cmake, ninja, mingw via choco)
+        shell: pwsh
+        run: |
+          choco install cmake ninja mingw -y --no-progress
+          $cmake = "C:\Program Files\CMake\bin"
+          $mingw = Get-ChildItem C:\ProgramData\chocolatey\lib\mingw\tools\install -Directory -ErrorAction SilentlyContinue |
+                   Where-Object { $_.Name -match 'mingw64' } | Select-Object -First 1
+          if ($mingw) { $env:PATH = "$cmake;$($mingw.FullName)\bin;" + $env:PATH } else { $env:PATH = "$cmake;" + $env:PATH }
+          $env:PATH = "C:\Program Files\Ninja;" + $env:PATH
+          Write-Output "PATH=$env:PATH" >> $env:GITHUB_ENV
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Create venv and install test deps
+        shell: pwsh
+        run: |
+          python -m venv .venv
+          .\.venv\Scripts\python.exe -m pip install --quiet pytest pyserial pyvisa pyvisa-py pyyaml
+
+      - name: Doctor
+        shell: pwsh
+        run: pwsh -NoProfile -File tools/doctor.ps1 -Json
+
+      - name: Build firmware (clean)
+        shell: pwsh
+        run: pwsh -NoProfile -File tools/build.ps1 -Configuration Debug -Clean -Json
+
+      - name: Build backend dispatch tests
+        shell: pwsh
+        run: pwsh -NoProfile -File tools/test-backends.ps1 -Json
+
+      - name: HIL tests (simulator)
+        shell: pwsh
+        run: pwsh -NoProfile -File tools/test.ps1 -Json
+
+      - name: Acceptance scenario (simulator)
+        shell: pwsh
+        run: pwsh -NoProfile -File tools/acceptance-scenario.ps1 -Mode simulator -Json

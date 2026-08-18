@@ -18,7 +18,9 @@ param(
     [string]$TestPath = 'tests/hil',
     [string]$RunId,
     [switch]$Json,
-    [switch]$NoBuild
+    [switch]$NoBuild,
+    [ValidateSet('simulator', 'real')]
+    [string]$Mode = 'simulator'
 )
 
 Set-StrictMode -Version Latest
@@ -39,6 +41,27 @@ $runsDir = Join-Path $repoRoot "artifacts\runs\$runId"
 New-Item -ItemType Directory -Force -Path $runsDir | Out-Null
 $env:FW_RUN_DIR = $runsDir
 
+# --- evidence: environment.json + dependencies.json (Spec §25) -----------------
+$doctor = Invoke-FwProcess -FilePath 'pwsh' -Arguments @('-NoProfile', '-NonInteractive', '-File', (Join-Path $PSScriptRoot 'doctor.ps1'), '-Json') -WorkingDirectory $repoRoot -TimeoutMs 120000
+if ($doctor.exit_code -in @(0, 1)) {
+    try {
+        $d = $doctor.stdout | ConvertFrom-Json
+        if ($d.checks) {
+            $deps = [ordered]@{}
+            foreach ($p in $d.checks.PSObject.Properties) {
+                $v = $p.Value
+                $verProp = $v.PSObject.Properties['version']
+                $deps[$p.Name] = if ($v.status -eq 'ok' -and $verProp) { $v.version } else { $v.status }
+            }
+            $deps | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $runsDir 'dependencies.json') -Encoding utf8
+        }
+        if ($d.host) {
+            $d.host | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $runsDir 'environment.json') -Encoding utf8
+        }
+    } catch {
+        Write-Warning "evidence block failed: $($_.Exception.Message)"
+    }
+}
 # --- firmware identity --------------------------------------------------------
 $artifact = Join-Path $repoRoot 'artifacts\build\firmware.elf'
 $firmwareInfo = [ordered]@{
@@ -90,6 +113,7 @@ if ($res.exit_code -eq 4) {
 # --- parse JUnit XML ----------------------------------------------------------
 $tests = @()
 $failures = 0
+$skippedAsFailure = $false
 if (Test-Path -LiteralPath $xmlNative) {
     [xml]$xml = Get-Content -LiteralPath $xmlNative -Raw
     foreach ($tc in $xml.testsuites.testsuite.testcase) {
@@ -117,6 +141,15 @@ if (Test-Path -LiteralPath $xmlNative) {
         } elseif ($skipNode) {
             $entry.status = 'skipped'
             $entry.reason = [string]$skipNode.message
+            # REAL mode: a skipped required HIL test is a failure, never PASS
+            # (release-fix: simulator/skip must not masquerade as real success)
+            if ($Mode -eq 'real') {
+                $entry.status = 'failed'
+                $entry.expected = 'executed on real hardware'
+                $entry.actual = "skipped: $($entry.reason)"
+                $failures++
+                $skippedAsFailure = $true
+            }
         }
         # evidence artifacts copied into the run dir by fixtures
         $tests += [pscustomobject]$entry
@@ -133,6 +166,9 @@ foreach ($f in @('uart.log', 'measurements.json')) {
 $summary = [ordered]@{
     schema    = 'firmware-hil-result/v1'
     run_id    = $runId
+    execution_mode = $Mode
+    simulated = ($Mode -ne 'real')
+    hardware_validated = ($Mode -eq 'real' -and $failures -eq 0)
     ok        = ($failures -eq 0)
     firmware  = $firmwareInfo
     tests     = $tests

@@ -25,7 +25,11 @@ artifacts/runs/*
 # Lab secrets / local overrides (never commit real ports/serials/IPs)
 lab/lab.yaml
 lab/*.local.yaml
+# GAP-009: the real safety policy is NEVER authoritative from the repo
+lab/limits.yaml
 .agentic-hil/
+# GAP-010: machine MCP registration lives in Qoder scopes; repo ships the example
+.mcp.json
 
 # Editor noise
 .vscode/
@@ -34,7 +38,7 @@ lab/*.local.yaml
 .DS_Store
 
 # Internal requirement document (kept local, not published with the OSS repo)
-Open Embedder Alternative v1 — AI 固件开发与实验室自动化平台 Spec.md
+Spec/
 
 # Local release notes (kept local)
 版本记录.txt

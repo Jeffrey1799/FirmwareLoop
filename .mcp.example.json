@@ -1,0 +1,23 @@
+{
+  "mcpServers": {
+    "agentic-hil": {
+      "type": "stdio",
+      "command": ".venv\\Scripts\\agentic-hil.exe",
+      "args": [
+        "mcp-stdio"
+      ],
+      "timeout": 120000,
+      "_comment": "EXAMPLE only (GAP-010). Machine registration goes to Qoder
+                   local/user scope via tools/configure-qoder.ps1 or
+                   'agentic-hil agent-install'. The relative .venv path is a
+                   project-local convention, not a machine path."
+    },
+    "logic2": {
+      "type": "http",
+      "url": "http://127.0.0.1:10530",
+      "enabled": false,
+      "_comment": "Saleae Logic 2 official MCP (experimental). Disabled by
+                   default; enable when a Saleae device is attached."
+    }
+  }
+}

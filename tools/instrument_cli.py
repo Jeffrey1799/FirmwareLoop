@@ -32,6 +32,12 @@ import os
 import sys
 import time
 
+# GAP-006: the thin instrument layer (open/identify/query/normalize/timeout/
+# close/error mapping) lives in tools/lib/instruments.py; this CLI is a thin
+# command surface on top of it.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from tools.lib import instruments as libinstr  # noqa: E402
+
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -77,16 +83,65 @@ def load_config() -> dict:
     return {}
 
 
-def load_limits() -> dict:
-    if os.path.isfile(LIMITS_PATH):
+def _authoritative_limits_path() -> str | None:
+    """Locate the trusted safety policy (GAP-009 v0.0.2):
+    1. FIRMWARELOOP_BENCH_CONFIG (trusted absolute path, file or dir)
+    2. %APPDATA%\\FirmwareLoop\\benches\\<bench-id>\\limits.yaml
+    Never the repo example - a workspace edit must not be privilege escalation.
+    """
+    env = os.environ.get("FIRMWARELOOP_BENCH_CONFIG")
+    if env:
+        if os.path.isfile(env):
+            return env
+        cand = os.path.join(env, "limits.yaml")
+        if os.path.isfile(cand):
+            return cand
+        return None
+    bench_id = os.environ.get("FIRMWARELOOP_BENCH_ID")
+    if bench_id:
+        cand = os.path.join(os.environ.get("APPDATA", ""), "FirmwareLoop", "benches", bench_id, "limits.yaml")
+        if os.path.isfile(cand):
+            return cand
+    return None
+
+
+def load_limits(require_authoritative: bool = False) -> dict:
+    """Load limits. For real hardware writes the authoritative policy is
+    mandatory (fail closed): missing trusted config => CONFIG_ERROR.
+    Read-only measurements may fall back to the repo example (no write risk)."""
+    trusted = _authoritative_limits_path()
+    if trusted:
         try:
             if yaml is not None:
-                with open(LIMITS_PATH, encoding="utf-8") as fh:
-                    return yaml.safe_load(fh) or {}
-            return json.load(open(LIMITS_PATH, encoding="utf-8"))
+                with open(trusted, encoding="utf-8") as fh:
+                    data = yaml.safe_load(fh) or {}
+            else:
+                data = json.load(open(trusted, encoding="utf-8"))
+            data["_source"] = trusted
+            return data
         except Exception as exc:  # noqa: BLE001
-            fail("CONFIG_ERROR", f"cannot parse {LIMITS_PATH}: {exc}")
-    fail("CONFIG_ERROR", f"missing safety limits file {LIMITS_PATH}")
+            fail("CONFIG_ERROR", f"cannot parse authoritative limits {trusted}: {exc}")
+    if require_authoritative:
+        fail("CONFIG_ERROR",
+             "no authoritative safety policy found for a real hardware write",
+             detail="set FIRMWARELOOP_BENCH_CONFIG=<trusted limits.yaml or bench dir>, or create "
+                    "%APPDATA%\\FirmwareLoop\\benches\\<bench-id>\\limits.yaml (GAP-009). "
+                    "Fail closed: the repo example is never authoritative.")
+    # read-only fallback to the repo example (never for writes)
+    example = os.path.join(REPO_ROOT, "lab", "limits.example.yaml")
+    if os.path.isfile(example):
+        try:
+            if yaml is not None:
+                with open(example, encoding="utf-8") as fh:
+                    data = yaml.safe_load(fh) or {}
+            else:
+                data = json.load(open(example, encoding="utf-8"))
+            data["_source"] = example
+            data["_authoritative"] = False
+            return data
+        except Exception as exc:  # noqa: BLE001
+            fail("CONFIG_ERROR", f"cannot parse {example}: {exc}")
+    fail("CONFIG_ERROR", "missing safety limits: no authoritative config and no lab/limits.example.yaml")
 
 
 def get_instrument(config: dict, name: str) -> dict:
@@ -97,41 +152,9 @@ def get_instrument(config: dict, name: str) -> dict:
     return dict(inst)
 
 
-# --------------------------------------------------------------------------- visa client
-class VisaClient:
-    def __init__(self, inst: dict):
-        try:
-            import pyvisa
-        except ImportError:
-            fail("INSTRUMENT_NOT_FOUND", "pyvisa is not installed; use --backend simulator for dry runs")
-        self.rm = pyvisa.ResourceManager()
-        resource = inst.get("resource")
-        if not resource:
-            fail("CONFIG_ERROR", f"instrument has no 'resource' entry; add one to lab/lab.yaml")
-        try:
-            self.inst = self.rm.open_resource(resource)
-            self.inst.timeout = int(inst.get("timeout_ms", 5000))
-        except Exception as exc:  # noqa: BLE001
-            fail("INSTRUMENT_TIMEOUT", f"cannot open resource '{resource}': {exc}")
-
-    def query(self, scpi: str) -> str:
-        try:
-            return str(self.inst.query(scpi)).strip()
-        except Exception as exc:  # noqa: BLE001
-            fail("INSTRUMENT_TIMEOUT", f"SCPI '{scpi}' failed: {exc}")
-
-    def write(self, scpi: str) -> None:
-        try:
-            self.inst.write(scpi)
-        except Exception as exc:  # noqa: BLE001
-            fail("INSTRUMENT_TIMEOUT", f"SCPI write '{scpi}' failed: {exc}")
-
-    def close(self) -> None:
-        try:
-            self.inst.close()
-        except Exception:  # noqa: BLE001
-            pass
-
+# --------------------------------------------------------------------------- clients
+# GAP-006: clients (visa/simulator) are provided by tools/lib/instruments.py;
+# the CLI only maps commands to them.
 
 # Default SCPI recipes; override per instrument in lab config (instrument.commands.*)
 SCOPE_COMMANDS = {
@@ -158,30 +181,45 @@ def _measure(config, args, kind: str, key: str, unit: str, channel_key: str = No
     backend = inst.get("backend", "simulator")
     sim = config.get("simulated_measurements") or {}
     ts = _now()
+    table = sim.get(kind, {})
 
-    if backend == "visa":
-        client = VisaClient(inst)
+    try:
+        client = libinstr.open_instrument(inst, table=table, timeout_ms=int(inst.get("timeout_ms", 5000)))
         try:
             scpi = _cmd(inst, kind, key, _default_scpi(kind, key)).format(ch=chan or "")
-            raw = client.query(scpi)
-            val = float(raw)
-            result = {"schema": "lab-measurement/v1", "ok": True, "instrument": args.instrument,
-                      "measurement": key, "channel": chan, "value": val, "unit": unit, "timestamp": ts}
+            if backend == "visa":
+                val = libinstr.query_measurement(client, scpi)
+                result = {"schema": "lab-measurement/v1", "ok": True, "instrument": args.instrument,
+                          "measurement": key, "channel": chan, "value": val, "unit": unit, "timestamp": ts,
+                          "execution_mode": "real", "simulated": False, "hardware_validated": True}
+            else:
+                val = float(client.query(scpi))
+                result = {"schema": "lab-measurement/v1", "ok": True, "instrument": args.instrument,
+                          "measurement": key, "channel": chan, "value": val, "unit": unit, "timestamp": ts,
+                          "execution_mode": "simulator", "simulated": True, "hardware_validated": False,
+                          "backend": "simulator"}
         finally:
-            client.close()
-    else:
-        table = sim.get(kind, {})
-        val = table.get(key, table.get(key, {"frequency": 20000.0, "duty": 50.0, "vpp": 3.3, "rms": 1.65,
-                                             "rise_time": 5.0e-9, "voltage": 3.3, "current": 0.035, "power": 0.1155}[key]))
-        result = {"schema": "lab-measurement/v1", "ok": True, "instrument": args.instrument,
-                  "measurement": key, "channel": chan, "value": val, "unit": unit, "timestamp": ts,
-                  "backend": "simulator"}
+            libinstr.close(client)
+    except libinstr.InstrumentError as exc:
+        fail(exc.error_class, exc.message, exc.detail)
     ok(result)
 
 
 def _default_scpi(kind: str, key: str) -> str:
-    table = {"scope": SCOPE_COMMANDS, "psu": PSU_COMMANDS, "dmm": DMM_COMMANDS}.get(kind, {})
-    return table.get(key, f"MEAS:{key.upper()}?")
+    # normalized measurement key -> default SCPI recipe (device profiles may
+    # override per instrument via lab config commands.*)
+    recipes = {
+        "frequency": ":MEASure:FREQuency? {ch}",
+        "duty": ":MEASure:PDUTy? {ch}",
+        "vpp": ":MEASure:VPP? {ch}",
+        "rms": ":MEASure:VRMS? {ch}",
+        "rise_time": ":MEASure:RTIMe? {ch}",
+        "voltage": "MEAS:VOLT?",
+        "current": "MEAS:CURR?",
+        "power": "MEAS:POW?",
+        "resistance": "MEAS:RES?",
+    }
+    return recipes.get(key, f"MEAS:{key.upper()}?")
 
 
 # --------------------------------------------------------------------------- safety
@@ -214,16 +252,19 @@ def do_psu_output(config, args, limits) -> None:
             check_limit(limits, "power", args.instrument, "max_current_a", float(args.current))
 
     if backend == "visa":
-        client = VisaClient(inst)
         try:
-            if state == "on":
-                if args.voltage is not None:
-                    client.write(f"APPL {args.voltage}")
-                if args.current is not None:
-                    client.write(f"CURR {args.current}")
-            client.write(f"OUTP {1 if state == 'on' else 0}")
-        finally:
-            client.close()
+            client = libinstr.open_instrument(inst, timeout_ms=int(inst.get("timeout_ms", 5000)))
+            try:
+                if state == "on":
+                    if args.voltage is not None:
+                        client.write(f"APPL {args.voltage}")
+                    if args.current is not None:
+                        client.write(f"CURR {args.current}")
+                client.write(f"OUTP {1 if state == 'on' else 0}")
+            finally:
+                libinstr.close(client)
+        except libinstr.InstrumentError as exc:
+            fail(exc.error_class, exc.message, exc.detail)
     ok({"schema": "lab-measurement/v1", "ok": True, "instrument": args.instrument, "measurement": "output",
         "state": state, "voltage_v": args.voltage, "current_a": args.current,
         "channel": "OUT1", "unit": "bool", "timestamp": _now(), "backend": backend})
@@ -240,11 +281,14 @@ def do_relay(config, args, limits) -> None:
     backend = inst.get("backend", "simulator")
     if backend == "visa":
         ch = inst.get("relay_channel", args.name.upper())
-        client = VisaClient(inst)
         try:
-            client.write(f"OUTP:CH{ch} {1 if args.state.lower() == 'on' else 0}")
-        finally:
-            client.close()
+            client = libinstr.open_instrument(inst, timeout_ms=int(inst.get("timeout_ms", 5000)))
+            try:
+                client.write(f"OUTP:CH{ch} {1 if args.state.lower() == 'on' else 0}")
+            finally:
+                libinstr.close(client)
+        except libinstr.InstrumentError as exc:
+            fail(exc.error_class, exc.message, exc.detail)
     ok({"schema": "lab-measurement/v1", "ok": True, "instrument": args.instrument, "measurement": "relay",
         "relay": args.name, "state": args.state.lower(), "timestamp": _now(), "backend": backend})
 
@@ -295,7 +339,11 @@ def main() -> None:
 
     args, _ = parser.parse_known_args()
     config = load_config()
-    limits = load_limits()
+    # writes (psu output / relay) demand the authoritative policy: fail closed
+    requires_policy = (args.command == "relay") or (
+        args.command == "psu" and getattr(args, "psu_cmd", None) == "output"
+    )
+    limits = load_limits(require_authoritative=requires_policy)
 
     if args.command == "list":
         insts = config.get("instruments") or {}
@@ -308,11 +356,14 @@ def main() -> None:
         key = "idn"
         backend = inst.get("backend", "simulator")
         if backend == "visa":
-            client = VisaClient(inst)
             try:
-                val = client.query(_cmd(inst, args.instrument, "idn", "*IDN?")).strip('"')
-            finally:
-                client.close()
+                client = libinstr.open_instrument(inst, timeout_ms=int(inst.get("timeout_ms", 5000)))
+                try:
+                    val = libinstr.identify(client)
+                finally:
+                    libinstr.close(client)
+            except libinstr.InstrumentError as exc:
+                fail(exc.error_class, exc.message, exc.detail)
         else:
             val = f"simulated {args.instrument} (backend=simulator)"
         ok({"schema": "lab-measurement/v1", "ok": True, "instrument": args.instrument,
@@ -322,13 +373,23 @@ def main() -> None:
         m = args.scope_cmd.replace("-", "_")
         if m == "capture_waveform":
             inst = get_instrument(config, args.instrument)
+            backend = inst.get("backend", "simulator")
             out = args.output
             os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
+            if backend == "visa":
+                # GAP-007: a real backend must never return synthesized data.
+                # Waveform capture requires a device-specific profile (based on
+                # the vendor Programming Manual); none is implemented yet, so
+                # the honest answer is CAPABILITY_NOT_SUPPORTED - never fake ok.
+                fail("CAPABILITY_NOT_SUPPORTED",
+                     "waveform capture is not supported for backend=visa without an instrument profile",
+                     detail="define a waveform profile from the vendor Programming Manual, or use backend=simulator for dry runs")
             with open(out, "w", encoding="utf-8") as fh:
                 fh.write("time_s,value_v\n0.0,0.0\n0.00001,3.3\n")
             ok({"schema": "lab-measurement/v1", "ok": True, "instrument": args.instrument,
                 "measurement": "waveform", "channel": args.channel, "value": None, "unit": "csv",
-                "capture": os.path.abspath(out), "timestamp": _now()})
+                "capture": os.path.abspath(out), "simulated": True,
+                "hardware_validated": False, "timestamp": _now(), "backend": backend})
         key = {"measure_frequency": "frequency", "measure_duty": "duty", "measure_vpp": "vpp",
                "measure_rms": "rms", "measure_rise_time": "rise_time"}[m]
         unit = {"frequency": "Hz", "duty": "%", "vpp": "V", "rms": "V", "rise_time": "s"}[key]

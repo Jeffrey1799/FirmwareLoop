@@ -4,6 +4,49 @@
 
 ---
 
+## 0. Reuse Gate（v0.0.2 强制，Spec §2/§12/§16/§31）
+
+任何新 Capability 开发前 **MUST** 走复用门，并先读：
+
+```text
+docs/DEPENDENCY_MATRIX.md
+docs/REUSE_PLAN.md
+```
+
+```text
+Configured MCP?  → 用
+      ↓ NO
+Official MCP?    → 用
+      ↓ NO
+Mature OSS MCP?  → 用
+      ↓ NO
+Official Vendor CLI / SDK / API? → 用
+      ↓ NO
+Mature CLI / Library?            → 用
+      ↓ NO
+Thin Adapter possible? (≤300 LOC) → 做薄适配
+      ↓ NO
+CAPABILITY_GAP → 必须人工批准后才可自研
+```
+
+硬规则：
+
+- **Existing tool 不便/不熟/难配/需集成 ≠ 重写它的理由。**
+- 无法联网验证可复用方案 → 返回 `DEPENDENCY_DISCOVERY_REQUIRED` 并停止，
+  **禁止** "搜索失败 → 假设不存在 → 自己实现"。
+- 禁止新增 MCP Server / Debugger Backend / Programmer Framework / Instrument
+  Framework / Transport Framework（需人工批准）。
+- Adapter 超 300 LOC 必须说明为什么现有工具不满足。
+- Headless 执行禁止自写 MCP Client（用 Agentic HIL Test Reactor / pytest 插件）。
+- `backend=visa` 下禁止合成数据；不支持 → `CAPABILITY_NOT_SUPPORTED`。
+
+```text
+允许：simulator backend → synthetic data
+禁止：visa backend      → fake waveform / ok=true
+```
+
+---
+
 ## 1. 能力模型（Spec §5.1）
 
 Agent 顶层只理解这些逻辑能力，不直接理解厂商工具：

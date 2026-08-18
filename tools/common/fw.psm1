@@ -5,14 +5,17 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-# --- Error Classes (Spec §22) -------------------------------------------------
+# --- Error Classes (Spec §22 + v0.0.2 §24 additions) --------------------------
 $script:FW_ERROR_CLASSES = @(
     'BUILD_ERROR', 'ARTIFACT_NOT_FOUND', 'PROBE_NOT_FOUND', 'TARGET_MISMATCH',
     'FLASH_ERROR', 'FLASH_VERIFY_ERROR', 'RESET_ERROR', 'UART_TIMEOUT',
     'UART_BUSY', 'CAN_ERROR', 'DEBUGGER_ERROR', 'LOGIC_CAPTURE_ERROR',
     'INSTRUMENT_NOT_FOUND', 'INSTRUMENT_TIMEOUT', 'MEASUREMENT_OUT_OF_RANGE',
     'TEST_FAILED', 'PERMISSION_DENIED', 'SAFETY_LIMIT', 'CONFIG_ERROR',
-    'UNKNOWN_ERROR'
+    'UNKNOWN_ERROR',
+    # v0.0.2 additions (Gap spec §24)
+    'CAPABILITY_NOT_SUPPORTED', 'DEPENDENCY_DISCOVERY_REQUIRED',
+    'HARDWARE_GATE_BYPASSED', 'REAL_HARDWARE_REQUIRED', 'HARDWARE_VALIDATION_FAILED'
 )
 
 # --- JSON output --------------------------------------------------------------
@@ -277,6 +280,32 @@ function Invoke-FwProcess {
     }
 }
 
+function Get-FwLabConfig {
+    <#
+    .SYNOPSIS
+        Parse lab/lab.yaml (or the example fallback) into a PowerShell object.
+        YAML is not natively parseable in PowerShell; the project venv python
+        + PyYAML does the parsing (release-fix #5: no ConvertFrom-Json on YAML).
+    #>
+    param([string]$RepoRoot)
+    if (-not $RepoRoot) { return $null }
+    $python = Resolve-FwPython -RepoRoot $RepoRoot
+    if (-not $python) { return $null }
+    $candidates = @(
+        (Join-Path $RepoRoot 'lab\lab.yaml'),
+        (Join-Path $RepoRoot 'lab\lab.example.yaml')
+    )
+    foreach ($path in $candidates) {
+        if (-not (Test-Path -LiteralPath $path)) { continue }
+        $script = "import json, sys; sys.stdout.reconfigure(encoding='utf-8', errors='replace');`nimport yaml`nprint(json.dumps(yaml.safe_load(open(sys.argv[1], encoding='utf-8')) or {}))"
+        $res = Invoke-FwProcess -FilePath $python -Arguments @('-c', $script, $path) -TimeoutMs 30000
+        if ($res.exit_code -eq 0) {
+            try { return ($res.stdout | ConvertFrom-Json) } catch { }
+        }
+    }
+    return $null
+}
+
 Export-ModuleMember -Function Write-FwJson, Get-FwErrorClass, New-FwError, `
     Resolve-FwPython, Get-FwRepoRoot, Save-FwLog, Get-FwTimestamp, `
-    Get-FwRunId, Get-FwGitInfo, Get-FwDiagnostics, Invoke-FwProcess
+    Get-FwRunId, Get-FwGitInfo, Get-FwDiagnostics, Invoke-FwProcess, Get-FwLabConfig

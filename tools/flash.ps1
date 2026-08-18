@@ -18,7 +18,7 @@
 #>
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory = $true)][ValidateSet('agentic-hil', 'openocd', 'stm32cubeprogrammer', 'esptool', 'jlink', 'vendor')]
+    [Parameter(Mandatory = $true)][ValidateSet('simulator', 'agentic-hil', 'openocd', 'stm32cubeprogrammer', 'esptool', 'jlink', 'vendor')]
     [string]$Backend,
     [string]$Artifact = 'artifacts/build/firmware.elf',
     [switch]$Json,
@@ -60,15 +60,33 @@ $logFile = Join-Path $repoRoot "artifacts\logs\flash-$stamp.log"
 New-Item -ItemType Directory -Force -Path (Split-Path $logFile) | Out-Null
 
 switch ($Backend) {
-    'agentic-hil' {
-        $cmd = Get-Command agentic-hil -ErrorAction SilentlyContinue
-        if (-not $cmd) {
-            Exit-WithError -Class 'PROBE_NOT_FOUND' -Message "'agentic-hil' is not installed; install Agentic HIL or choose a vendor fallback." -Detail 'See README.md -> M2'
+    'simulator' {
+        # GAP-003 (v0.0.2): simulator flash is a no-op acknowledgement - the
+        # simulated DUT is the compiled artifact itself, exercised by the HIL
+        # harness. Never presented as real flashing.
+        Save-FwLog -Path $logFile -Content 'simulator backend: flash validated via firmware build + HIL run (no real programmer involved)'
+        $result = [ordered]@{
+            schema      = 'firmware-flash-result/v1'
+            ok          = $true
+            backend     = 'simulator'
+            artifact    = $full
+            artifact_sha256 = (Get-FileHash -LiteralPath $full -Algorithm SHA256).Hash.ToLowerInvariant()
+            simulated   = $true
+            hardware_validated = $false
+            log         = (Resolve-Path -LiteralPath $logFile).Path
+            generated_at = Get-FwTimestamp
         }
-        # NOTE: verify the exact CLI schema against the installed version at setup
-        # (Spec §32). The following is the documented v0.4+ shape:
-        $args = @('flash', '--artifact', $full, '--json')
-        $res = Invoke-FwProcess -FilePath $cmd.Source -Arguments $args -WorkingDirectory $repoRoot -TimeoutMs $TimeoutMs -StdoutFile $logFile
+        if ($Json) { Write-FwJson ([pscustomobject]$result) -Compact } else { Write-FwJson ([pscustomobject]$result) }
+        exit 0
+    }
+    'agentic-hil' {
+        # GAP-003 (v0.0.2): NO guessed CLI. Agentic HIL 0.14 has no 'flash'
+        # subcommand; flashing is done through its MCP tools (flash_firmware /
+        # artifact_upload) in Qoder, or through the Test Reactor plan in
+        # headless runs. This wrapper intentionally refuses to guess.
+        Exit-WithError -Class 'REAL_HARDWARE_REQUIRED' `
+            -Message "flash via Agentic HIL is not driven from this wrapper; use the Qoder MCP tool flash_firmware, or a test-reactor plan (test-plans/real-smoke.yaml)." `
+            -Detail "GAP-003: guessed CLI paths are banned (agentic-hil 0.14.0 CLI has no flash subcommand)."
     }
     default {
         Exit-WithError -Class 'CONFIG_ERROR' -Message "backend '$Backend' is not configured on this machine yet." -Detail 'Flash is intentionally not configured until real hardware integration (Spec M2).'

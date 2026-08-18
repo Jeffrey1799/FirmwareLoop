@@ -1,0 +1,7 @@
+<Project xmlns="http://www.keil.com/schema/project">
+  <Targets>
+    <Target>
+      <TargetName>Debug</TargetName>
+    </Target>
+  </Targets>
+</Project>

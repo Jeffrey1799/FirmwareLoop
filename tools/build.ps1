@@ -1,37 +1,51 @@
 <#
 .SYNOPSIS
-    Build adapter (Spec §8). Invokes the project's existing build system
-    (CMake/Ninja by default; Keil/IAR/ESP-IDF/Zephyr/PlatformIO are detected
-    but require their toolchain on PATH) and returns a structured
-    firmware-build-result/v1 JSON document.
+    Build adapter (Spec §8, v0.0.2 GAP-002). Dispatches to the project's
+    existing build system across seven backends and returns structured
+    firmware-build-result/v1 JSON plus a firmware-artifacts/v1 manifest.
+
+    Backends: cmake | make | platformio | keil | iar | zephyr | esp-idf
+
+    Detection precedence (GAP-002):
+        1. -Backend (explicit)
+        2. project config (lab/lab.yaml -> project.build_backend)
+        3. strong project marker (west.yml -> zephyr, sdkconfig/idf.py ->
+           esp-idf, platformio.ini, *.uvproj*, *.ewp, Makefile, CMakeLists.txt)
+        4. generic detection
 
     Usage:
         .\tools\build.ps1 -Configuration Debug -Json
-        .\tools\build.ps1 -SourceDir .\demo-firmware -Json
+        .\tools\build.ps1 -Backend make -SourceDir .\demo-make -Json
+        .\tools\build.ps1 -Backend keil -DryRun -Json          # command construction
+        .\tools\build.ps1 -Backend keil -BackendTool C:\fake\UV4.cmd -Json
 
     Exit codes:
-        0  build ok
+        0  build ok (or dry-run construction ok)
         1  build failed (compile/link errors)
-        2  configuration/toolchain error (CONFIG_ERROR / ARTIFACT_NOT_FOUND)
+        2  configuration/toolchain error
 #>
 [CmdletBinding()]
 param(
+    [ValidateSet('cmake', 'make', 'platformio', 'keil', 'iar', 'zephyr', 'esp-idf')]
+    [string]$Backend,
     [string]$Configuration = 'Debug',
     [switch]$Json,
     [string]$SourceDir,
     [string]$ArtifactDir,
     [string]$BuildDir,
+    [string]$BackendTool,          # override tool path (fake executable in tests)
     [int]$TimeoutMs = 600000,
     [switch]$SkipConfigure,
-    [switch]$Clean
+    [switch]$Clean,
+    [switch]$DryRun               # print constructed command, do not execute
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 Import-Module (Join-Path $PSScriptRoot 'common\fw.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot 'common\build-backends.psm1') -Force
 
 $repoRoot = Get-FwRepoRoot
-$started = Get-Date
 $sw = [System.Diagnostics.Stopwatch]::StartNew()
 
 function Exit-WithError {
@@ -41,70 +55,99 @@ function Exit-WithError {
     exit 2
 }
 
-# ---------------------------------------------------------------- backend detection
-$candidates = @()
-if ($SourceDir) {
-    $candidates += $SourceDir
-} else {
-    $candidates += $repoRoot
-    Get-ChildItem -LiteralPath $repoRoot -Directory | Where-Object { $_.Name -notmatch '^(\.|artifacts|tests|tools|lab|docs|\.venv|node_modules)' } | ForEach-Object {
-        $candidates += $_.FullName
+# ------------------------------------------------------- 1. backend resolution
+$projBackend = $null
+$labCfgObj = Get-FwLabConfig -RepoRoot $repoRoot
+if ($labCfgObj) {
+    $projProp = $labCfgObj.PSObject.Properties['project']
+    if ($projProp) {
+        $bbProp = $projProp.Value.PSObject.Properties['build_backend']
+        if ($bbProp) { $projBackend = [string]$bbProp.Value }
     }
 }
-
-$backend = $null
-$src = $null
-foreach ($c in $candidates) {
-    if (-not (Test-Path -LiteralPath $c)) { continue }
-    if (Test-Path (Join-Path $c 'CMakeLists.txt')) { $backend = 'cmake'; $src = $c; break }
-    if (Test-Path (Join-Path $c 'Makefile')) { $backend = 'make'; $src = $c; break }
-    if (Test-Path (Join-Path $c 'platformio.ini')) { $backend = 'platformio'; $src = $c; break }
-    if (Get-ChildItem -LiteralPath $c -Filter '*.uvproj*' -ErrorAction SilentlyContinue) { $backend = 'keil'; $src = $c; break }
-    if (Get-ChildItem -LiteralPath $c -Filter '*.ewp' -ErrorAction SilentlyContinue) { $backend = 'iar'; $src = $c; break }
-}
+$detect = Get-FwBackendDetect -ExplicitBackend $Backend -ProjectBackend $projBackend -SourceDir $SourceDir -RepoRoot $repoRoot
+$backend = $detect.backend
+$src = $detect.src
+$projectFile = $detect.project_file
+$detectSource = $detect.source
 
 if (-not $backend) {
-    Exit-WithError -Class 'CONFIG_ERROR' -Message 'No build system detected (CMakeLists.txt / Makefile / platformio.ini / *.uvproj* / *.ewp). Pass -SourceDir.' `
-        -Detail "Searched: $($candidates -join ', ')"
+    Exit-WithError -Class 'CONFIG_ERROR' -Message 'No build system detected (west.yml / sdkconfig / platformio.ini / *.uvproj* / *.ewp / Makefile / CMakeLists.txt). Pass -Backend and/or -SourceDir.' `
+        -Detail "project config backend: $projBackend"
 }
 
-# ---------------------------------------------------------------- toolchain
-$cmake = (Get-Command cmake -ErrorAction SilentlyContinue).Source
-if (-not $cmake) {
-    Exit-WithError -Class 'CONFIG_ERROR' -Message "Backend '$backend' requires cmake on PATH." -Detail 'Install CMake (e.g. winget install Kitware.CMake) and retry.'
-}
-$ninja = (Get-Command ninja -ErrorAction SilentlyContinue).Source
-$generator = if ($ninja) { 'Ninja' } else { 'MinGW Makefiles' }
-
-if (-not $BuildDir) { $BuildDir = Join-Path $repoRoot "artifacts\build\cmake-$Configuration" }
+if (-not $BuildDir) { $BuildDir = Join-Path $repoRoot "artifacts\build\$backend-$Configuration" }
 if (-not $ArtifactDir) { $ArtifactDir = Join-Path $repoRoot 'artifacts\build' }
 New-Item -ItemType Directory -Force -Path $BuildDir, $ArtifactDir, (Join-Path $repoRoot 'artifacts\logs') | Out-Null
-
-# Deterministic rebuilds: ninja/cmake on Windows keep coarse mtime granularity,
-# so a restored source file can look "unchanged" and be skipped. -Clean wipes
-# the binary dir to guarantee every source is recompiled.
 if ($Clean) {
     Remove-Item -Recurse -Force -LiteralPath $BuildDir -ErrorAction SilentlyContinue
     New-Item -ItemType Directory -Force -Path $BuildDir | Out-Null
+}
+
+# ------------------------------------------------------- 2. command construction
+$cmd = Get-FwBackendCommand -Backend $backend -Src $src -ProjectFile $projectFile `
+    -Configuration $Configuration -BuildDir $BuildDir -Tool $BackendTool `
+    -AllowMissingTool:$DryRun
+
+if ($cmd.ContainsKey('missing')) {
+    $need = $cmd.missing
+    $hint = switch ($need) {
+        'cmake' { 'winget install Kitware.CMake' }
+        'make'  { 'winget install GnuWin32.Make (or use CI: apt install make)' }
+        'platformio' { 'pip install platformio' }
+        'keil'  { 'install Keil uVision (UV4.exe must be on PATH)' }
+        'iar'   { 'install IAR EWARM (IarBuild.exe must be on PATH)' }
+        'zephyr' { 'pip install west && west init' }
+        'esp-idf' { 'install ESP-IDF (idf.py must be on PATH)' }
+        'keil-project' { 'no .uvproj* found in source dir' }
+        'iar-project'  { 'no .ewp found in source dir' }
+        'zephyr-board' { $cmd.detail }
+        default { "tool '$need' not found" }
+    }
+    Exit-WithError -Class 'CONFIG_ERROR' -Message "backend '$backend' is unavailable: $need" -Detail $hint
 }
 
 $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $logFile = Join-Path $repoRoot "artifacts\logs\build-$stamp.log"
 $logCanonical = Join-Path $repoRoot 'artifacts\logs\build.log'
 
-# ---------------------------------------------------------------- configure + build
-$configureArgs = @('-S', $src, '-B', $BuildDir, '-G', $generator, "-DCMAKE_BUILD_TYPE=$Configuration")
-if (-not $SkipConfigure -and -not (Test-Path (Join-Path $BuildDir 'CMakeCache.txt'))) {
-    $cfg = Invoke-FwProcess -FilePath $cmake -Arguments $configureArgs -WorkingDirectory $repoRoot -TimeoutMs $TimeoutMs -StdoutFile $logFile
-    if ($cfg.exit_code -ne 0) {
-        Exit-WithError -Class 'BUILD_ERROR' -Message 'CMake configure failed.' -Detail (($cfg.stdout + $cfg.stderr) | Out-String)
+if ($DryRun) {
+    $dry = [ordered]@{
+        schema        = 'firmware-build-result/v1'
+        ok            = $true
+        dry_run       = $true
+        configuration = $Configuration
+        backend       = $backend
+        command       = $cmd.label
+        command_line  = $cmd.file + ' ' + ($cmd.args -join ' ')
+        cwd           = if ($cmd.cwd) { $cmd.cwd } else { $repoRoot }
+        artifact      = $null
+        warnings      = 0
+        errors        = 0
+        duration_ms   = 0
+        log           = $null
+        git           = Get-FwGitInfo -RepoRoot $repoRoot
+        generated_at  = Get-FwTimestamp
     }
+    if ($Json) { Write-FwJson ([pscustomobject]$dry) -Compact } else { Write-FwJson ([pscustomobject]$dry) }
+    exit 0
 }
 
-$buildArgs = @('--build', $BuildDir, '--config', $Configuration)
-$res = Invoke-FwProcess -FilePath $cmake -Arguments $buildArgs -WorkingDirectory $repoRoot -TimeoutMs $TimeoutMs -StdoutFile $logFile
-
-# canonical log: last build always at the documented path
+# ------------------------------------------------------- 3. execute
+$res = Invoke-FwProcess -FilePath $cmd.file -Arguments $cmd.args `
+    -WorkingDirectory $(if ($cmd.cwd) { $cmd.cwd } else { $repoRoot }) `
+    -TimeoutMs $TimeoutMs -StdoutFile $logFile
+# follow-up steps (e.g. cmake --build after configure)
+$hasSteps = ($cmd -is [hashtable]) -and $cmd.ContainsKey('steps')
+if ($res.exit_code -eq 0 -and $hasSteps) {
+    foreach ($step in $cmd.steps) {
+        $stepRes = Invoke-FwProcess -FilePath $step.file -Arguments $step.args `
+            -WorkingDirectory $(if ($step.cwd) { $step.cwd } else { $repoRoot }) `
+            -TimeoutMs $TimeoutMs -StdoutFile $logFile
+        $res = $stepRes
+        if ($res.exit_code -ne 0) { break }
+    }
+}
 Copy-Item -LiteralPath $logFile -Destination $logCanonical -Force -ErrorAction SilentlyContinue
 
 $sw.Stop()
@@ -116,13 +159,14 @@ $errors = @($diags | Where-Object severity -eq 'error').Count
 $warnings = @($diags | Where-Object severity -eq 'warning').Count
 $timedOut = $res.timed_out
 
-# ---------------------------------------------------------------- artifact collection
-$artifact = if (Test-Path (Join-Path $ArtifactDir 'firmware.elf')) { Join-Path $ArtifactDir 'firmware.elf' } else { $null }
-$secondary = @()
-foreach ($ext in @('hex', 'map', 'bin')) {
-    $p = Join-Path $ArtifactDir "firmware.$ext"
-    if (Test-Path -LiteralPath $p) { $secondary += (Resolve-Path -LiteralPath $p).Path }
-}
+# ------------------------------------------------------- 4. artifacts
+$manifest = Get-FwBackendArtifacts -Backend $backend -ArtifactDir $ArtifactDir -Src $src -BuildDir $BuildDir
+$manifest.configuration = $Configuration
+if ($projectFile) { $manifest.project_file = $projectFile } else { $manifest.project_file = $null }
+$manifestJson = Join-Path $ArtifactDir 'artifacts.json'
+$manifest | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $manifestJson -Encoding utf8
+
+$artifact = if ($manifest.primary) { $manifest.primary.native_path } else { $null }
 $artifactHash = $null
 if ($artifact) {
     $artifactHash = (Get-FileHash -LiteralPath $artifact -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -130,50 +174,35 @@ if ($artifact) {
 
 $git = Get-FwGitInfo -RepoRoot $repoRoot
 
-# ---------------------------------------------------------------- result
-if ($res.exit_code -eq 0 -and -not $timedOut -and $artifact) {
-    $result = [ordered]@{
-        schema             = 'firmware-build-result/v1'
-        ok                 = $true
-        configuration      = $Configuration
-        backend            = $backend
-        artifact           = (Resolve-Path -LiteralPath $artifact).Path
-        artifact_sha256    = $artifactHash
-        secondary_artifacts = @($secondary | ForEach-Object { (Resolve-Path -LiteralPath $_).Path })
-        warnings           = $warnings
-        errors             = $errors
-        duration_ms        = $durationMs
-        log                = (Resolve-Path -LiteralPath $logCanonical).Path
-        git                = $git
-        generated_at       = Get-FwTimestamp
-    }
-    if ($Json) { Write-FwJson ([pscustomobject]$result) -Compact } else { Write-FwJson ([pscustomobject]$result) }
-    exit 0
+# ------------------------------------------------------- 5. result
+$base = [ordered]@{
+    schema        = 'firmware-build-result/v1'
+    configuration = $Configuration
+    backend       = $backend
+    artifact      = $artifact
+    artifact_sha256 = $artifactHash
+    warnings      = $warnings
+    errors        = $errors
+    duration_ms   = $durationMs
+    log           = $logCanonical
+    artifacts     = $manifest
+    git           = $git
+    generated_at  = Get-FwTimestamp
 }
 
 if ($timedOut) {
     Exit-WithError -Class 'BUILD_ERROR' -Message "Build exceeded timeout (${TimeoutMs} ms) and was killed." -Detail $logFile
 }
-
 if ($res.exit_code -ne 0) {
-    $result = [ordered]@{
-        schema        = 'firmware-build-result/v1'
-        ok            = $false
-        configuration = $Configuration
-        backend       = $backend
-        artifact      = $null
-        warnings      = $warnings
-        errors        = $errors
-        duration_ms   = $durationMs
-        log           = $logCanonical
-        diagnostics   = @($diags | Select-Object file, line, col, severity, message)
-        git           = $git
-        generated_at  = Get-FwTimestamp
-    }
-    if ($Json) { Write-FwJson ([pscustomobject]$result) -Compact } else { Write-FwJson ([pscustomobject]$result) }
+    $base.ok = $false
+    $base.artifact = $null
+    $base.diagnostics = @($diags | Select-Object file, line, col, severity, message)
+    if ($Json) { Write-FwJson ([pscustomobject]$base) -Compact } else { Write-FwJson ([pscustomobject]$base) }
     exit 1
 }
-
-# exit 0 but artifact missing
-Exit-WithError -Class 'ARTIFACT_NOT_FOUND' -Message 'Build reported success but artifacts/build/firmware.elf was not produced.' `
-    -Detail "Searched: $ArtifactDir (log: $logCanonical)"
+if (-not $artifact) {
+    Exit-WithError -Class 'ARTIFACT_NOT_FOUND' -Message "Build reported success but no $backend artifact was produced." -Detail $manifestJson
+}
+$base.ok = $true
+if ($Json) { Write-FwJson ([pscustomobject]$base) -Compact } else { Write-FwJson ([pscustomobject]$base) }
+exit 0

@@ -1,0 +1,59 @@
+# test-plans/real-smoke.yaml - REAL hardware smoke plan (GAP-004, v0.0.2)
+#
+# Logical devices only (Spec §8 GAP-004): `dut` and `dut_uart` map to real
+# hardware through the machine's Agentic HIL configuration (adopt-hardware /
+# lab/lab.yaml). NO COM ports, probe serials or machine-specific permissions
+# may appear here.
+#
+# Executed by: agentic-hil test-reactor --test-config test-plans/real-smoke.yaml
+# (or through acceptance-scenario.ps1 -Mode real)
+#
+# Format version 4 per `agentic-hil test-schema` (2026-08 verified).
+
+version: 4
+name: real-smoke
+
+steps:
+  - action: flash
+    device: dut
+    image_path: artifacts/build/firmware.elf
+    reset_after_flash: true
+
+  - action: uart_open
+    device: dut_uart
+    clear_buffer: true
+
+  - action: uart_expect
+    device: dut_uart
+    text: "Application started"
+    timeout_s: 10
+
+  - action: uart_write
+    device: dut_uart
+    text: "jedec"
+
+  - action: uart_expect
+    device: dut_uart
+    text: "JEDEC EF 40 18"
+    timeout_s: 5
+
+  - action: uart_write
+    device: dut_uart
+    text: "pwm"
+
+  - action: uart_expect
+    device: dut_uart
+    text: "PWM 20000 Hz"
+    timeout_s: 5
+
+  # loop demo: three consecutive banner checks (repeat block, v4)
+  - action: repeat
+    count: 3
+    steps:
+      - action: delay
+        device: dut
+        duration_ms: 200
+      - action: uart_expect
+        device: dut_uart
+        text: "Application started"
+        timeout_s: 2

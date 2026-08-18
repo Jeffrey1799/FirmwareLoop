@@ -95,6 +95,23 @@ uart.log / measurements.json / final-report.json）。
 └── AI_DEV_GUIDE.md   AGENT 强制规则
 ```
 
+## 能力验证状态（v0.0.2）
+
+> 状态定义：`Implemented`（已实现）/ `Simulator Validated`（模拟验证）/
+> `Real Hardware Validated`（真机验证）/ `Experimental` / `Not Implemented`
+
+| 能力 | 状态 |
+|---|---|
+| Build：cmake | ✅ Implemented + Simulator Validated（真跑） |
+| Build：make / platformio / keil / iar / zephyr / esp-idf | ✅ Implemented（命令构造 + fake 执行测试；真机待对应工具链） |
+| pytest HIL（12 项，simulator） | ✅ Implemented + Simulator Validated |
+| pytest HIL（real UART） | ⚠️ Implemented（Agentic HIL 插件已就绪）→ Real Hardware Validated 待 DUT |
+| Agentic HIL MCP（42 工具） | ✅ Implemented + discovery 验证 → 真机待 DUT |
+| 逻辑分析 capture/decode/assert（SPI/UART/I2C） | ✅ Simulator Validated → Real Hardware Validated 待 LA |
+| VISA 仪器（simulator） | ✅ Simulator Validated → Real Hardware Validated 待仪器 |
+| Safety Policy（limits.yaml） | ✅ Implemented（simulator 校验）→ 外置权威配置 v0.0.2 中 |
+| 自动修复闭环（M6 载体） | ✅ Simulator Validated → Real Hardware Validated 待 DUT |
+
 ## 里程碑状态
 
 | 里程碑 | 状态 |

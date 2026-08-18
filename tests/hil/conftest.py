@@ -29,8 +29,10 @@ import os
 import queue
 import re
 import subprocess
+import sys
 import threading
 import time
+import warnings
 
 import pytest
 
@@ -69,13 +71,31 @@ def _run_dir() -> str:
     return os.path.join(REPO_ROOT, "artifacts", "logs")
 
 
-def _dut_mode(config: dict) -> str:
+def _dut_gate(config: dict) -> str:
+    """UART gate selection (GAP-005, v0.0.2):
+      'agentic-hil'  - default real gate: pytest -> agentic_hil pytest plugin
+                       -> policy/lease/audit (MCP-named service methods)
+      'direct-serial' - DEBUG fallback only: pyserial straight to COM, bypasses
+                       Agentic HIL policy. Default DISABLED; enabling emits
+                       HARDWARE_GATE_BYPASSED.
+      'simulator'    - compiled-artifact DUT (public CI / no hardware).
+    """
     dut_cfg = (config.get("dut") or {}).get("uart") or {}
-    if dut_cfg.get("mode") in ("serial", "simulator"):
-        return dut_cfg["mode"]
-    if dut_cfg.get("port"):
-        return "serial"
-    return "simulator"
+    gate = dut_cfg.get("gate", "simulator")
+    if gate == "direct-serial":
+        warnings.warn(
+            "HARDWARE_GATE_BYPASSED: direct pyserial bypasses Agentic HIL "
+            "policy/lease/audit (GAP-005). Debug fallback only - autonomous "
+            "agents must use gate: agentic-hil.",
+            RuntimeWarning,
+            stacklevel=3,
+        )
+    return gate
+
+
+def _dut_gate_configured(config: dict, gate: str) -> bool:
+    dut_cfg = (config.get("dut") or {}).get("uart") or {}
+    return dut_cfg.get("gate") == gate
 
 
 # --------------------------------------------------------------------------- evidence
@@ -202,6 +222,112 @@ class SimulatedDut:
         return reply
 
 
+class AgenticHilDut:
+    """Real DUT over the Agentic HIL pytest plugin (GAP-005).
+
+    Uses the official service dispatch: service.call("com_session_start", {...})
+    with the authoritative overall_success() verdict (agentic_hil.tools).
+    reset() drives reset_target first, THEN opens the UART session.
+    """
+
+    def __init__(self, service, evidence: Evidence, port_id: str):
+        from agentic_hil.tools import overall_success  # runtime import (official)
+
+        self.svc = service
+        self._success = overall_success
+        self.evidence = evidence
+        self.port_id = port_id
+        self._buf = ""
+
+    # -- helpers ------------------------------------------------------------
+    def _call(self, name: str, arguments: dict | None = None) -> dict:
+        """Dispatch a tool by name; raise on structural failure."""
+        result = self.svc.call(name, arguments or {})
+        if not isinstance(result, dict):
+            raise RuntimeError(f"{name} returned non-object result: {result!r}")
+        if not self._success(result):
+            summary = result.get("summary") or result.get("error_type") or str(result)
+            raise RuntimeError(f"{name} failed (overall_success=false): {summary}")
+        return result
+
+    @staticmethod
+    def _text(result) -> str:
+        """Extract text from a tool result (dict / list / str / None)."""
+        if result is None:
+            return ""
+        if isinstance(result, str):
+            return result
+        if isinstance(result, dict):
+            for key in ("text", "output", "value"):
+                if result.get(key) is not None:
+                    return str(result[key])
+            return str(result)
+        if isinstance(result, (list, tuple)):
+            parts = []
+            for item in result:
+                if isinstance(item, dict):
+                    parts.append(AgenticHilDut._text(item))
+                else:
+                    parts.append(str(item))
+            return " ".join(parts)
+        return str(result)
+
+    # -- DUT lifecycle ------------------------------------------------------
+    def reset(self, timeout: float = 6.0) -> None:
+        """Real reset (reset_target mode=run), then open the UART session."""
+        self._call("reset_target", {"mode": "run"})
+        self._call("com_session_start", {"port_id": self.port_id, "clear_buffer": True})
+
+    def boot(self, timeout: float = 6.0) -> None:
+        self.reset(timeout=timeout)
+        assert self.expect("Bootloader v1.0", timeout=timeout)
+        assert self.expect("Application started", timeout=timeout)
+
+    def write(self, text: str) -> None:
+        self.evidence.uart("TX", text)
+        self._call("com_write", {"port_id": self.port_id, "text": text + "\r\n"})
+
+    def _read_chunk(self, wait_s: float) -> str:
+        result = self._call("com_read", {
+            "port_id": self.port_id, "max_bytes": 4096, "wait_timeout_s": max(0.1, wait_s),
+        })
+        return self._text(result)
+
+    def expect(self, pattern: str, timeout: float = 5.0) -> str | None:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            try:
+                chunk = self._read_chunk(min(2.0, deadline - time.monotonic()))
+            except RuntimeError:
+                chunk = ""
+            if chunk:
+                self.evidence.uart("RX", chunk)
+                self._buf += chunk
+            if re.search(pattern, self._buf):
+                return pattern
+            if time.monotonic() >= deadline:
+                break
+        return None
+
+    def command(self, cmd: str, timeout: float = 5.0) -> str | None:
+        self.write(cmd)
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            try:
+                chunk = self._read_chunk(min(2.0, deadline - time.monotonic()))
+            except RuntimeError:
+                chunk = ""
+            if chunk:
+                self.evidence.uart("RX", chunk)
+                self._buf += chunk
+                m = re.search(r"(JEDEC [0-9A-F ]+|PWM [0-9]+|ERR|[A-Za-z0-9 -]{2,})", self._buf)
+                if m:
+                    reply = m.group(0)
+                    if not reply.startswith(("Bootloader ", "Application ")):
+                        return reply
+        return None
+
+
 class SerialDut:
     """Real COM port via pyserial (port/baud from lab config)."""
 
@@ -260,14 +386,30 @@ class SerialDut:
 
 
 @pytest.fixture(scope="session")
-def dut(lab_config: dict, evidence: Evidence):
-    mode = _dut_mode(lab_config)
-    if mode == "serial":
+def dut(lab_config: dict, evidence: Evidence, request):
+    """DUT UART client, gated (GAP-005):
+    - gate: agentic-hil   -> AgenticHilDut (policy/lease/audit preserved)
+    - gate: direct-serial -> SerialDut (debug fallback; bypass warns)
+    - default (simulator) -> SimulatedDut (compiled artifact, no hardware)
+    """
+    gate = _dut_gate(lab_config)
+
+    if gate == "agentic-hil":
+        try:
+            from agentic_hil.tools import AgenticHILToolService  # noqa: F401
+        except ImportError:
+            pytest.skip("agentic_hil pytest plugin not installed; cannot use gate: agentic-hil")
+        service = request.getfixturevalue("agentic_hil")
+        port_id = ((lab_config.get("dut") or {}).get("uart") or {}).get("port_id", "dut_uart")
+        return AgenticHilDut(service, evidence, port_id)
+
+    if gate == "direct-serial":
         cfg = (lab_config.get("dut") or {}).get("uart") or {}
         try:
             return SerialDut(cfg["port"], int(cfg.get("baud", 115200)), evidence)
         except Exception as exc:  # noqa: BLE001
             pytest.skip(f"serial DUT unavailable: {exc}")
+
     if not os.path.isfile(DEFAULT_ARTIFACT):
         pytest.skip(
             f"no firmware artifact at {DEFAULT_ARTIFACT}; run tools/build.ps1 first"
@@ -340,15 +482,71 @@ class SimPsu:
         return self._measure("power", 0.1155, "W")
 
 
+class VisaMeasurements:
+    """Real measurements over tools/lib/instruments.py (GAP-006).
+
+    A configured visa backend FAILS tests when the instrument is unreachable -
+    never pytest.skip(), never synthetic data (GAP-007)."""
+
+    def __init__(self, inst_cfg: dict, evidence: Evidence):
+        sys.path.insert(0, os.path.join(REPO_ROOT, "tools", "lib"))
+        from tools.lib import instruments  # deferred: only for real backends
+
+        self._instruments = instruments
+        self.inst_cfg = inst_cfg
+        self.evidence = evidence
+        self.client = instruments.open_instrument(inst_cfg, timeout_ms=int(inst_cfg.get("timeout_ms", 5000)))
+
+    def _measure(self, name: str, channel: str, scpi: str, unit: str) -> float:
+        val = self._instruments.query_measurement(self.client, scpi.format(ch=channel))
+        self.evidence.measurement({
+            "schema": "lab-measurement/v1", "ok": True,
+            "instrument": self.inst_cfg.get("name", "scope1"),
+            "measurement": name, "channel": channel, "value": val, "unit": unit,
+            "execution_mode": "real", "simulated": False, "hardware_validated": True,
+        })
+        return val
+
+    def _cmd(self, key: str, default: str) -> str:
+        cmds = self.inst_cfg.get("commands") or {}
+        return cmds.get(key, default)
+
+    def measure_frequency(self, channel: str = "CH1") -> float:
+        return self._measure("frequency", channel, self._cmd("measure_frequency", ":MEASure:FREQuency? {ch}"), "Hz")
+
+    def measure_vpp(self, channel: str = "CH1") -> float:
+        return self._measure("vpp", channel, self._cmd("measure_vpp", ":MEASure:VPP? {ch}"), "V")
+
+    def measure_duty(self, channel: str = "CH1") -> float:
+        return self._measure("duty", channel, self._cmd("measure_duty", ":MEASure:PDUTy? {ch}"), "%")
+
+    def measure_rms(self, channel: str = "CH1") -> float:
+        return self._measure("rms", channel, self._cmd("measure_rms", ":MEASure:VRMS? {ch}"), "V")
+
+    def measure_rise_time(self, channel: str = "CH1") -> float:
+        return self._measure("rise_time", channel, self._cmd("measure_rise_time", ":MEASure:RTIMe? {ch}"), "s")
+
+    def measure_voltage(self) -> float:
+        return self._measure("voltage", "OUT1", self._cmd("measure_voltage", "MEAS:VOLT?"), "V")
+
+    def measure_current(self) -> float:
+        return self._measure("current", "OUT1", self._cmd("measure_current", "MEAS:CURR?"), "A")
+
+    def measure_power(self) -> float:
+        return self._measure("power", "OUT1", self._cmd("measure_power", "MEAS:POW?"), "W")
+
+
 @pytest.fixture(scope="session")
 def scope(evidence: Evidence, lab_config: dict):
-    if (lab_config.get("instruments") or {}).get("scope1", {}).get("backend") == "visa":
-        pytest.skip("VISA scope not configured; run tools/instrument_cli.py to verify")
+    inst_cfg = (lab_config.get("instruments") or {}).get("scope1") or {}
+    if inst_cfg.get("backend") == "visa":
+        return VisaMeasurements(inst_cfg, evidence)
     return SimScope(evidence)
 
 
 @pytest.fixture(scope="session")
 def psu(evidence: Evidence, lab_config: dict):
-    if (lab_config.get("instruments") or {}).get("psu1", {}).get("backend") == "visa":
-        pytest.skip("VISA PSU not configured.")
+    inst_cfg = (lab_config.get("instruments") or {}).get("psu1") or {}
+    if inst_cfg.get("backend") == "visa":
+        return VisaMeasurements(inst_cfg, evidence)
     return SimPsu(evidence)
