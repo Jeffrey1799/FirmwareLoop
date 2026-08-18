@@ -96,14 +96,22 @@ function Resolve-FwPython {
 function Get-FwRepoRoot {
     <#
     .SYNOPSIS
-        Root of the firmware project = directory containing tools/ and lab/.
+        Root of the firmware project = directory containing tools/ and lab/ (or parent of PSScriptRoot).
     #>
-    $cur = Get-Location
-    while ($cur) {
-        if ((Test-Path (Join-Path $cur 'tools')) -and (Test-Path (Join-Path $cur 'lab'))) {
-            return $cur.Path
+    if ($PSScriptRoot) {
+        $candidate = Split-Path -Parent $PSScriptRoot
+        if ($candidate -and ((Test-Path (Join-Path $candidate 'tools')) -or (Test-Path (Join-Path $candidate 'pyproject.toml')))) {
+            return $candidate
         }
-        $cur = $cur.Parent
+    }
+    $cur = (Get-Location).Path
+    while ($cur -and (Test-Path -LiteralPath $cur)) {
+        if ((Test-Path (Join-Path $cur 'tools')) -and (Test-Path (Join-Path $cur 'lab'))) {
+            return $cur
+        }
+        $parent = Split-Path -Parent $cur
+        if (-not $parent -or $parent -eq $cur) { break }
+        $cur = $parent
     }
     return (Get-Location).Path
 }

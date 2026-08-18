@@ -28,7 +28,7 @@ def test_mcp_initialize():
     assert res is not None
     assert res["id"] == 1
     assert res["result"]["serverInfo"]["name"] == "firmwareloop"
-    assert res["result"]["serverInfo"]["version"] == "0.0.10"
+    assert res["result"]["serverInfo"]["version"] == "0.0.11"
     assert "tools" in res["result"]["capabilities"]
 
 

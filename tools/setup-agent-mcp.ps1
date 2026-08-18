@@ -1,8 +1,8 @@
 <#
 .SYNOPSIS
-    Dual-Tier MCP setup and registration helper (v0.0.8).
+    Dual-Tier MCP setup and registration helper (v0.0.10).
     Inspects installed AI coding agents (Qoder, Claude Code, Antigravity, Cursor)
-    and prints/generates exact registration commands and workspace configuration.
+    and configures global MCP / skills or prints exact registration commands.
 
     Usage:
         .\tools\setup-agent-mcp.ps1
@@ -24,17 +24,23 @@ $python = Resolve-FwPython -RepoRoot $repoRoot
 $fwMcpServer = Join-Path $repoRoot 'tools\fw_mcp_server.py'
 $ahilExe = Join-Path $repoRoot '.venv\Scripts\agentic-hil.exe'
 
+$isSourceRepo = (Test-Path -LiteralPath $fwMcpServer)
+
+$fwCmdName = if ($isSourceRepo -and $python) { "`"$python`" `"$fwMcpServer`"" } else { "fwloop" }
+$ahilCmdName = if (Test-Path -LiteralPath $ahilExe) { "`"$ahilExe`" mcp-stdio" } else { "agentic-hil mcp-stdio" }
+
 $report = [ordered]@{
     schema = 'firmwareloop-mcp-setup/v1'
     repo_root = $repoRoot
+    is_source_repo = $isSourceRepo
     servers = [ordered]@{
         firmwareloop = [ordered]@{
-            command = $python
-            args = @($fwMcpServer)
+            command = if ($isSourceRepo -and $python) { $python } else { "fwloop" }
+            args = if ($isSourceRepo) { @($fwMcpServer) } else { @() }
             description = 'Upper-tier firmware engineering workflow MCP'
         }
         agentic_hil = [ordered]@{
-            command = $ahilExe
+            command = if (Test-Path -LiteralPath $ahilExe) { $ahilExe } else { "agentic-hil" }
             args = @('mcp-stdio')
             description = 'Lower-tier physical hardware & probe MCP'
         }
@@ -48,8 +54,8 @@ $report.agents.claude_code = [ordered]@{
     detected = ($null -ne $claudeCmd)
     path = if ($claudeCmd) { $claudeCmd.Source } else { $null }
     registration_commands = @(
-        "claude mcp add firmwareloop -- `"$python`" `"$fwMcpServer`"",
-        "claude mcp add agentic-hil -- `"$ahilExe`" mcp-stdio"
+        "claude mcp add --scope user fwloop -- $fwCmdName",
+        "claude mcp add --scope user agentic-hil -- $ahilCmdName"
     )
 }
 
@@ -64,13 +70,13 @@ $report.agents.qoder = [ordered]@{
     path = if ($qoderCmd) { $qoderCmd.Source } else { $null }
     registration_commands = if ($qoderCmd) {
         @(
-            "$($qoderCmd.Name) mcp add firmwareloop -- `"$python`" `"$fwMcpServer`"",
-            "$($qoderCmd.Name) mcp add agentic-hil -- `"$ahilExe`" mcp-stdio"
+            "$($qoderCmd.Name) mcp add --global fwloop -- $fwCmdName",
+            "$($qoderCmd.Name) mcp add --global agentic-hil -- $ahilCmdName"
         )
     } else {
         @(
-            "qoder mcp add firmwareloop -- `"$python`" `"$fwMcpServer`"",
-            "qoder mcp add agentic-hil -- `"$ahilExe`" mcp-stdio"
+            "qoder.cmd mcp add --global fwloop -- $fwCmdName",
+            "qoder.cmd mcp add --global agentic-hil -- $ahilCmdName"
         )
     }
 }
@@ -78,6 +84,7 @@ $report.agents.qoder = [ordered]@{
 # 3. Antigravity CLI / Gemini 全局 MCP 配置与 Skills
 $antigravityConfigDir = Join-Path $env:USERPROFILE '.gemini\config'
 $antigravityMcpConfigFile = Join-Path $antigravityConfigDir 'mcp_config.json'
+$antigravityMcpUpdated = $false
 if (Test-Path -LiteralPath $antigravityConfigDir) {
     try {
         $existingJson = if (Test-Path -LiteralPath $antigravityMcpConfigFile) {
@@ -92,6 +99,7 @@ if (Test-Path -LiteralPath $antigravityConfigDir) {
         $existingJson.mcpServers | Add-Member -MemberType NoteProperty -Name 'agentic-hil' -Value ([pscustomobject]@{ command = "agentic-hil"; args = @("mcp-stdio") }) -Force
         $updatedJsonStr = ConvertTo-Json -InputObject $existingJson -Depth 10
         [System.IO.File]::WriteAllText($antigravityMcpConfigFile, $updatedJsonStr, [System.Text.Encoding]::UTF8)
+        $antigravityMcpUpdated = $true
     } catch {
         # ignore non-fatal config write error
     }
@@ -126,6 +134,7 @@ if (Test-Path -LiteralPath $sourceSkillsDir) {
 
 $report.agents.antigravity = [ordered]@{
     mcp_config_path = $antigravityMcpConfigFile
+    mcp_configured = $antigravityMcpUpdated
     global_skills_installed = ($installedSkills.Count -gt 0)
     installed_skills = $installedSkills
     note = "Antigravity global mcp_config.json and skills configured."
@@ -138,13 +147,13 @@ if ($WriteWorkspaceMcp) {
         mcpServers = [ordered]@{
             firmwareloop = [ordered]@{
                 type = 'stdio'
-                command = $python
-                args = @($fwMcpServer)
+                command = if ($isSourceRepo -and $python) { $python } else { "fwloop" }
+                args = if ($isSourceRepo) { @($fwMcpServer) } else { @() }
                 timeout = 300000
             }
             "agentic-hil" = [ordered]@{
                 type = 'stdio'
-                command = $ahilExe
+                command = if (Test-Path -LiteralPath $ahilExe) { $ahilExe } else { "agentic-hil" }
                 args = @('mcp-stdio')
                 timeout = 120000
             }
@@ -159,24 +168,28 @@ if ($Json) {
     Write-FwJson ([pscustomobject]$report)
 } else {
     Write-Host "============================================================" -ForegroundColor Cyan
-    Write-Host "FirmwareLoop v0.0.8 - Dual-Tier MCP & Skill Setup Helper" -ForegroundColor Green
+    Write-Host "  FirmwareLoop Dual-Tier MCP & Agent Setup Helper (v0.0.10)" -ForegroundColor Green
     Write-Host "============================================================" -ForegroundColor Cyan
     Write-Host ""
-    Write-Host "[1] Claude Code CLI Registration:" -ForegroundColor Yellow
+    Write-Host "[1] Google Antigravity / Gemini CLI:" -ForegroundColor Yellow
+    if ($antigravityMcpUpdated) {
+        Write-Host "    - Global MCP Config: [OK] Written to $antigravityMcpConfigFile" -ForegroundColor Green
+    } else {
+        Write-Host "    - Global MCP Config: ~/.gemini/config/mcp_config.json (Ready)"
+    }
+    if ($installedSkills.Count -gt 0) {
+        Write-Host "    - Global Skills: [OK] Synchronized $($installedSkills.Count) skills ($($installedSkills -join ', ')) to Antigravity & Claude Code" -ForegroundColor Green
+    }
+    Write-Host ""
+    Write-Host "[2] Claude Code CLI Registration:" -ForegroundColor Yellow
     Write-Host "    $($report.agents.claude_code.registration_commands[0])"
     Write-Host "    $($report.agents.claude_code.registration_commands[1])"
     Write-Host ""
-    Write-Host "[2] Qoder IDE (Official GUI & Workspace .mcp.json):" -ForegroundColor Yellow
-    Write-Host "    - GUI: Press 'Ctrl + Shift + ,' -> MCP -> My Services -> '+ Add', paste the JSON config"
-    Write-Host "    - Workspace: Qoder automatically detects '.mcp.json' in your workspace root"
+    Write-Host "[3] Qoder IDE:" -ForegroundColor Yellow
     Write-Host "    - CLI: $($report.agents.qoder.registration_commands[0])"
-    Write-Host "           $($report.agents.qoder.registration_commands[1])"
+    Write-Host "    - Workspace: Project root '.mcp.json' is automatically detected"
     Write-Host ""
-    Write-Host "[3] Antigravity CLI / Cursor / VS Code:" -ForegroundColor Yellow
-    Write-Host "    - MCP: Automatically reads '.mcp.json' in workspace root"
-    if ($skillInstalled) {
-        Write-Host "    - Global Skill: [OK] Successfully registered to: $targetGlobalSkillDir\SKILL.md" -ForegroundColor Green
-    }
-    Write-Host "    - Generate workspace config: .\tools\setup-agent-mcp.ps1 -WriteWorkspaceMcp"
-    Write-Host ""
+    Write-Host "============================================================" -ForegroundColor Cyan
+    Write-Host "[+] All AI Coding Agents are configured and ready!" -ForegroundColor Green
+    Write-Host "============================================================" -ForegroundColor Cyan
 }

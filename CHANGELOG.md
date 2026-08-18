@@ -3,6 +3,17 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/) 与
 [Semantic Versioning](https://semver.org/)。版本记录按日期倒序。
 
+## [0.0.11] - 2026-08-18
+
+v0.0.11 目标：修复 `fwloop setup` 脚本在 PowerShell 严格模式与全局安装环境下的变量未定义和 `Parent` 属性解析异常。
+
+### Fixed
+
+- **PowerShell 严格模式与路径兼容性修复**：
+  - 修复 `tools/common/fw.psm1` 中 `Get-FwRepoRoot` 在 `Set-StrictMode` 下访问 `PathInfo.Parent` 的报错，采用 `Split-Path -Parent` 递归与 `PSScriptRoot` 识别
+  - 修复 `tools/setup-agent-mcp.ps1` 中旧变量 `$skillInstalled` 异常
+  - 自适应全局安装模式（输出 `fwloop` 命令）与本地源码模式（输出绝对路径）
+
 ## [0.0.10] - 2026-08-18
 
 v0.0.10 目标：打通 Google Antigravity / Gemini CLI 全局 MCP 自动注入，重构 README 为 3 步极速起步指南并建立核心命令职责速查体系。
