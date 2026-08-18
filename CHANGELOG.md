@@ -3,6 +3,20 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/) 与
 [Semantic Versioning](https://semver.org/)。版本记录按日期倒序。
 
+## [0.0.13] - 2026-08-18
+
+v0.0.13 目标：修复 `fwloop setup` 把 Qoder MCP 写到错误用户配置文件、导致 IDE 设置页看不到服务的问题。
+
+### Fixed
+
+- **Qoder / Qoder CN 用户级 MCP 写入路径**：
+  - `fwloop setup` 不再依赖 `qoder.cmd --add-mcp`。该命令写入 `%APPDATA%\Qoder\User\mcp.json`，Qoder 设置页不读取该文件
+  - 国际版直接合并写入 `~/.qoder/mcp.json`
+  - 国内版直接合并写入 `~/.qoder-cn/mcp.json`
+  - 仅在对应目录已存在时写入，保留 `gbrain` / `graphify` 等既有服务
+  - `tools/setup-agent-mcp.ps1` 同步改为同一套双版本写入逻辑
+  - 新增单元测试覆盖既有服务保留与双版本并行写入
+
 ## [0.0.12] - 2026-08-18
 
 v0.0.12 目标：实现 `fwloop setup` 一键同时全自动配置 Google Antigravity、Claude Code 与 Qoder IDE 三大平台的全局 MCP 与 Skills。

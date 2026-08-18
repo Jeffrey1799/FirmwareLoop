@@ -28,7 +28,7 @@ def test_mcp_initialize():
     assert res is not None
     assert res["id"] == 1
     assert res["result"]["serverInfo"]["name"] == "firmwareloop"
-    assert res["result"]["serverInfo"]["version"] == "0.0.12"
+    assert res["result"]["serverInfo"]["version"] == "0.0.13"
     assert "tools" in res["result"]["capabilities"]
 
 
@@ -300,5 +300,41 @@ def test_cli_init(tmp_path, monkeypatch, capsys):
     assert os.path.exists(tmp_path / "AGENTS.md")
     assert os.path.exists(tmp_path / "CLAUDE.md")
     assert os.path.exists(tmp_path / "GEMINI.md")
+
+
+def test_upsert_qoder_mcp_json_preserves_existing(tmp_path):
+    mcp_path = tmp_path / "mcp.json"
+    mcp_path.write_text(
+        json.dumps({
+            "mcpServers": {
+                "gbrain": {"command": "gbrain", "args": ["serve"], "type": "stdio", "disabled": True},
+                "graphify": {"command": "graphify-mcp", "type": "stdio"},
+            }
+        }),
+        encoding="utf-8",
+    )
+    data = fw_mcp_server.upsert_qoder_mcp_json(str(mcp_path))
+    assert data["mcpServers"]["gbrain"]["command"] == "gbrain"
+    assert data["mcpServers"]["graphify"]["command"] == "graphify-mcp"
+    assert data["mcpServers"]["firmwareloop"]["command"] == "fwloop"
+    assert data["mcpServers"]["agentic-hil"]["args"] == ["mcp-stdio"]
+
+
+def test_configure_qoder_user_mcp_writes_both_editions(tmp_path):
+    (tmp_path / ".qoder").mkdir()
+    (tmp_path / ".qoder-cn").mkdir()
+    (tmp_path / ".qoder" / "mcp.json").write_text(json.dumps({"mcpServers": {}}), encoding="utf-8")
+    (tmp_path / ".qoder-cn" / "mcp.json").write_text(
+        json.dumps({"mcpServers": {"graphify": {"command": "graphify-mcp", "type": "stdio"}}}),
+        encoding="utf-8",
+    )
+    results = fw_mcp_server.configure_qoder_user_mcp(str(tmp_path))
+    assert all(item["ok"] for item in results)
+    intl = json.loads((tmp_path / ".qoder" / "mcp.json").read_text(encoding="utf-8"))
+    cn = json.loads((tmp_path / ".qoder-cn" / "mcp.json").read_text(encoding="utf-8"))
+    assert "firmwareloop" in intl["mcpServers"]
+    assert "agentic-hil" in intl["mcpServers"]
+    assert cn["mcpServers"]["graphify"]["command"] == "graphify-mcp"
+    assert "firmwareloop" in cn["mcpServers"]
 
 

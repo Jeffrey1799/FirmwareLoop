@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Dual-Tier MCP setup and registration helper (v0.0.12).
+    Dual-Tier MCP setup and registration helper (v0.0.13).
     Inspects installed AI coding agents (Qoder, Claude Code, Antigravity, Cursor)
     and configures global MCP / skills or prints exact registration commands.
 
@@ -87,31 +87,69 @@ $report.agents.claude_code = [ordered]@{
     )
 }
 
-# 2. Qoder IDE / CLI 全局 User Profile MCP 自动配置
-$qoderCmd = $null
-foreach ($name in @('qoder.cmd', 'qoder', 'qodercli')) {
-    $c = Get-Command $name -ErrorAction SilentlyContinue
-    if ($c) { $qoderCmd = $c; break }
-}
-$qoderConfigured = $false
-if ($qoderCmd) {
-    try {
-        $fwJsonStr = '{"name":"firmwareloop","command":"fwloop"}'
-        $ahilJsonStr = '{"name":"agentic-hil","command":"agentic-hil","args":["mcp-stdio"]}'
-        & $qoderCmd.Source --add-mcp $fwJsonStr | Out-Null
-        & $qoderCmd.Source --add-mcp $ahilJsonStr | Out-Null
-        $qoderConfigured = $true
-    } catch {
-        # ignore non-fatal error
+# 2. Qoder / Qoder CN user-level MCP (~/.qoder/mcp.json, ~/.qoder-cn/mcp.json)
+# The IDE settings page reads these files. qoder.cmd --add-mcp writes
+# %APPDATA%\Qoder\User\mcp.json, which the settings UI does not show.
+function Merge-FwQoderUserMcp {
+    param([string]$McpPath)
+    $data = [ordered]@{ mcpServers = [ordered]@{} }
+    if (Test-Path -LiteralPath $McpPath) {
+        try {
+            $existing = Get-Content -LiteralPath $McpPath -Raw -Encoding UTF8 | ConvertFrom-Json
+            if ($existing.PSObject.Properties['mcpServers'] -and $existing.mcpServers) {
+                $data.mcpServers = [ordered]@{}
+                $existing.mcpServers.PSObject.Properties | ForEach-Object {
+                    $data.mcpServers[$_.Name] = $_.Value
+                }
+            }
+        } catch {
+            $data = [ordered]@{ mcpServers = [ordered]@{} }
+        }
     }
+    $data.mcpServers['firmwareloop'] = [pscustomobject]@{ command = 'fwloop'; type = 'stdio' }
+    $data.mcpServers['agentic-hil'] = [pscustomobject]@{ command = 'agentic-hil'; args = @('mcp-stdio'); type = 'stdio' }
+    $parent = Split-Path -Parent $McpPath
+    if (-not (Test-Path -LiteralPath $parent)) {
+        New-Item -ItemType Directory -Force -Path $parent | Out-Null
+    }
+    $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+    [System.IO.File]::WriteAllText($McpPath, ((ConvertTo-Json -InputObject $data -Depth 10) + [Environment]::NewLine), $utf8NoBom)
 }
+
+$qoderEditions = @(
+    [ordered]@{ name = 'Qoder'; dirName = '.qoder' },
+    [ordered]@{ name = 'Qoder CN'; dirName = '.qoder-cn' }
+)
+$qoderWritten = @()
+$qoderResults = @()
+foreach ($edition in $qoderEditions) {
+    $editionDir = Join-Path $env:USERPROFILE $edition.dirName
+    $mcpFile = Join-Path $editionDir 'mcp.json'
+    $entry = [ordered]@{
+        name = $edition.name
+        path = $mcpFile
+        detected = (Test-Path -LiteralPath $editionDir)
+        configured = $false
+    }
+    if ($entry.detected) {
+        try {
+            Merge-FwQoderUserMcp -McpPath $mcpFile
+            $entry.configured = $true
+            $qoderWritten += $mcpFile
+        } catch {
+            $entry.error = $_.Exception.Message
+        }
+    }
+    $qoderResults += [pscustomobject]$entry
+}
+$qoderConfigured = ($qoderWritten.Count -gt 0)
 $report.agents.qoder = [ordered]@{
-    detected = ($null -ne $qoderCmd)
-    path = if ($qoderCmd) { $qoderCmd.Source } else { $null }
+    detected = ($qoderResults | Where-Object { $_.detected } | Measure-Object).Count -gt 0
     user_profile_configured = $qoderConfigured
+    written_files = $qoderWritten
+    editions = $qoderResults
     registration_commands = @(
-        "qoder.cmd --add-mcp '{\`"name\`":\`"firmwareloop\`",\`"command\`":\`"fwloop\`"}'",
-        "qoder.cmd --add-mcp '{\`"name\`":\`"agentic-hil\`",\`"command\`":\`"agentic-hil\`",\`"args\`":[\`"mcp-stdio\`"]}'"
+        "fwloop setup   # writes ~/.qoder/mcp.json and ~/.qoder-cn/mcp.json"
     )
 }
 
@@ -204,7 +242,7 @@ if ($Json) {
     Write-FwJson ([pscustomobject]$report)
 } else {
     Write-Host "============================================================" -ForegroundColor Cyan
-    Write-Host "  FirmwareLoop Dual-Tier MCP & Agent Setup Helper (v0.0.10)" -ForegroundColor Green
+    Write-Host "  FirmwareLoop Dual-Tier MCP & Agent Setup Helper (v0.0.13)" -ForegroundColor Green
     Write-Host "============================================================" -ForegroundColor Cyan
     Write-Host ""
     Write-Host "[1] Google Antigravity / Gemini CLI:" -ForegroundColor Yellow
@@ -221,11 +259,15 @@ if ($Json) {
     Write-Host "    $($report.agents.claude_code.registration_commands[0])"
     Write-Host "    $($report.agents.claude_code.registration_commands[1])"
     Write-Host ""
-    Write-Host "[3] Qoder IDE:" -ForegroundColor Yellow
-    if ($qoderConfigured) {
-        Write-Host "    - User Profile MCP: [OK] Automatically registered to Qoder User Profile" -ForegroundColor Green
-    } else {
-        Write-Host "    - User Profile MCP: Run $($report.agents.qoder.registration_commands[0])"
+    Write-Host "[3] Qoder IDE / Qoder CN:" -ForegroundColor Yellow
+    foreach ($edition in $qoderResults) {
+        if ($edition.configured) {
+            Write-Host "    - $($edition.name): [OK] Written to $($edition.path)" -ForegroundColor Green
+        } elseif ($edition.detected) {
+            Write-Host "    - $($edition.name): [Warning] Could not write $($edition.path)"
+        } else {
+            Write-Host "    - $($edition.name): not installed ($($edition.path))"
+        }
     }
     Write-Host "    - Workspace: Project root '.mcp.json' is automatically detected"
     Write-Host ""

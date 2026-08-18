@@ -107,10 +107,12 @@ claude mcp add --scope user fwloop -- fwloop
 claude mcp add --scope user agentic-hil -- agentic-hil mcp-stdio
 ```
 
-3. **Qoder IDE**：
-```bash
-qoder.cmd mcp add --global fwloop -- fwloop
-```
+3. **Qoder / Qoder CN**：
+`fwloop setup` 会直接写入 IDE 设置页读取的用户级文件：
+- 国际版：`~/.qoder/mcp.json`
+- 国内版：`~/.qoder-cn/mcp.json`
+
+不要依赖 `qoder.cmd --add-mcp`：它写到 `%APPDATA%\Qoder\User\mcp.json`，设置页看不到。
 
 4. **Cursor / 其他 IDE**（在工程根目录的 `.mcp.json` 中并联配置）：
 ```json
@@ -152,7 +154,7 @@ fwloop init
 
 | 命令 | 适用级别 | 核心作用 | 使用时机 |
 |---|---|---|---|
-| **`fwloop setup`** | **系统全局级** | 给各大 Agent（Antigravity / Claude Code）配置全局 MCP 与同步技能包 | **全电脑只需跑 1 次** |
+| **`fwloop setup`** | **系统全局级** | 给各大 Agent（Antigravity / Claude Code / Qoder / Qoder CN）配置全局 MCP 与同步技能包 | **全电脑只需跑 1 次** |
 | **`fwloop init`** | **工程项目级** | 在当前单片机代码目录下生成 `AGENTS.md`、`GEMINI.md`、`CLAUDE.md` 与台架配置 | **每个新单片机项目跑 1 次** |
 | **`fwloop doctor`** | **环境诊断** | 检查编译器（Keil/GCC）、Python 环境、串口与探针连接健康度 | 随时排查环境时使用 |
 | **`fwloop update`** | **自动更新** | 一键自动拉取最新代码并热重载依赖 | 升级工具版本时使用 |
@@ -308,7 +310,7 @@ claude mcp remove --scope user agentic-hil
 ├── demo-firmware/    示例固件（CMake；宿主编译模拟 MCU，闭环验证载体）
 ├── demo-make/        示例固件（Make；构建测试载体）
 ├── docs/             DEPENDENCY_MATRIX / REUSE_PLAN / V0.0.2_GAP_VERIFICATION
-├── pyproject.toml    标准 Python 包配置与 CLI 入口声明 (v0.0.12)
+├── pyproject.toml    标准 Python 包配置与 CLI 入口声明 (v0.0.13)
 ├── .mcp.example.json 双层 MCP 配置模板（firmwareloop + agentic-hil）
 ├── AGENTS.md         通用智能体规范（Antigravity / Qoder / Cursor 等）
 ├── CLAUDE.md         Claude Code CLI 指南
@@ -318,7 +320,7 @@ claude mcp remove --scope user agentic-hil
 
 ---
 
-## 能力验证状态（v0.0.12）
+## 能力验证状态（v0.0.13）
 
 > 状态定义：`Implemented`（已实现）/ `Simulator Validated`（模拟验证）/
 > `Real Hardware Validated`（真机验证）/ `Experimental` / `Not Implemented`

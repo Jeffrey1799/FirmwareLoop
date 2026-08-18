@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-fw_mcp_server.py - FirmwareLoop High-Level Workflow & Device MCP Server (v0.0.12).
+fw_mcp_server.py - FirmwareLoop High-Level Workflow & Device MCP Server (v0.0.13).
 
 Exposes high-level firmware engineering and hardware management tools to AI Coding
 Agents (Antigravity CLI, Claude Code CLI, Qoder IDE, Cursor) via the Model Context
@@ -1160,7 +1160,7 @@ def process_request(req: Dict[str, Any]) -> Optional[Dict[str, Any]]:
                 },
                 "serverInfo": {
                     "name": "firmwareloop",
-                    "version": "0.0.12"
+                    "version": "0.0.13"
                 }
             }
         }
@@ -1252,7 +1252,7 @@ def process_request(req: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 def handle_cli_update() -> int:
     """Handle `firmwareloop update` command."""
     print("============================================================")
-    print("  FirmwareLoop Auto-Updater (v0.0.12)")
+    print("  FirmwareLoop Auto-Updater (v0.0.13)")
     print("============================================================")
 
     is_git_repo = os.path.exists(os.path.join(REPO_ROOT, ".git"))
@@ -1324,10 +1324,78 @@ def handle_cli_doctor() -> int:
     return res.returncode
 
 
+QODER_USER_MCP_SERVERS = {
+    "firmwareloop": {"command": "fwloop", "type": "stdio"},
+    "agentic-hil": {"command": "agentic-hil", "args": ["mcp-stdio"], "type": "stdio"},
+}
+
+QODER_USER_MCP_EDITIONS = (
+    ("Qoder", ".qoder"),
+    ("Qoder CN", ".qoder-cn"),
+)
+
+
+def upsert_qoder_mcp_json(mcp_path: str, servers: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Merge MCP servers into a Qoder user-level ~/.qoder[-cn]/mcp.json without dropping existing entries."""
+    payload = dict(servers or QODER_USER_MCP_SERVERS)
+    data: Dict[str, Any] = {}
+    if os.path.exists(mcp_path):
+        try:
+            with open(mcp_path, "r", encoding="utf-8-sig") as f:
+                loaded = json.load(f)
+            if isinstance(loaded, dict):
+                data = loaded
+        except Exception:
+            data = {}
+    mcp_servers = data.get("mcpServers")
+    if not isinstance(mcp_servers, dict):
+        mcp_servers = {}
+    mcp_servers.update(payload)
+    data["mcpServers"] = mcp_servers
+    parent = os.path.dirname(mcp_path)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+    with open(mcp_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
+        f.write("\n")
+    return data
+
+
+def configure_qoder_user_mcp(user_home: str) -> List[Dict[str, Any]]:
+    """Write firmwareloop MCP entries into installed Qoder / Qoder CN user mcp.json files."""
+    results: List[Dict[str, Any]] = []
+    for label, folder in QODER_USER_MCP_EDITIONS:
+        edition_dir = os.path.join(user_home, folder)
+        mcp_file = os.path.join(edition_dir, "mcp.json")
+        if not os.path.isdir(edition_dir):
+            results.append({
+                "edition": label,
+                "ok": False,
+                "path": mcp_file,
+                "reason": "not_installed",
+            })
+            continue
+        try:
+            upsert_qoder_mcp_json(mcp_file)
+            results.append({
+                "edition": label,
+                "ok": True,
+                "path": mcp_file,
+            })
+        except Exception as exc:
+            results.append({
+                "edition": label,
+                "ok": False,
+                "path": mcp_file,
+                "reason": str(exc),
+            })
+    return results
+
+
 def handle_cli_setup() -> int:
     """Handle `firmwareloop setup` command: simultaneously configure Antigravity CLI, Claude Code CLI, and Qoder IDE."""
     print("============================================================")
-    print("  FirmwareLoop Multi-Agent Global Setup Helper (v0.0.12)")
+    print("  FirmwareLoop Multi-Agent Global Setup Helper (v0.0.13)")
     print("============================================================")
     print("")
 
@@ -1380,22 +1448,24 @@ def handle_cli_setup() -> int:
     except Exception as e:
         print(f"    - Global MCP Config: [Warning] Could not update .claude.json: {e}")
 
-    # 3. Qoder IDE
-    print("\n[3] Qoder IDE:")
-    qoder_cmd = shutil.which("qoder.cmd") or shutil.which("qoder")
-    if qoder_cmd:
-        try:
-            r1 = subprocess.run([qoder_cmd, "--add-mcp", json.dumps({"name": "firmwareloop", "command": "fwloop"})], shell=True, capture_output=True, text=True)
-            r2 = subprocess.run([qoder_cmd, "--add-mcp", json.dumps({"name": "agentic-hil", "command": "agentic-hil", "args": ["mcp-stdio"]})], shell=True, capture_output=True, text=True)
-            if r1.returncode == 0 and r2.returncode == 0:
-                print("    - User Profile MCP: [OK] Automatically registered to Qoder User Profile")
-                configured_agents.append("Qoder IDE")
-            else:
-                print(f"    - User Profile MCP: [Notice] Qoder CLI output: {r1.stdout.strip()}")
-        except Exception as e:
-            print(f"    - User Profile MCP: [Warning] Could not invoke qoder CLI: {e}")
+    # 3. Qoder / Qoder CN user-level MCP
+    # IDE settings read ~/.qoder/mcp.json and ~/.qoder-cn/mcp.json.
+    # qoder.cmd --add-mcp writes the VS Code-style %APPDATA%\Qoder\User\mcp.json, which the settings page does not show.
+    print("\n[3] Qoder IDE / Qoder CN:")
+    qoder_results = configure_qoder_user_mcp(user_home)
+    qoder_ok = [item for item in qoder_results if item.get("ok")]
+    if qoder_ok:
+        for item in qoder_ok:
+            print(f"    - {item['edition']}: [OK] Written to {item['path']}")
+        configured_agents.append("Qoder")
     else:
-        print("    - User Profile MCP: Qoder CLI not in PATH (Workspace .mcp.json supported)")
+        print("    - User MCP: neither ~/.qoder nor ~/.qoder-cn found (Workspace .mcp.json still supported)")
+    for item in qoder_results:
+        if item.get("ok"):
+            continue
+        if item.get("reason") == "not_installed":
+            continue
+        print(f"    - {item['edition']}: [Warning] Could not write {item['path']}: {item.get('reason')}")
 
     # 4. Global Skills Sync for Antigravity and Claude Code
     ag_skills_dir = os.path.join(user_home, ".gemini", "antigravity-cli", "skills")
@@ -1430,7 +1500,7 @@ def handle_cli_setup() -> int:
 def handle_cli_init() -> int:
     """Handle `firmwareloop init` command."""
     print("============================================================")
-    print("  FirmwareLoop Multi-Agent Project Initializer (v0.0.12)")
+    print("  FirmwareLoop Multi-Agent Project Initializer (v0.0.13)")
     print("============================================================")
     cwd = os.getcwd()
     print(f"[*] Initializing multi-agent guidelines & bench config in:\n    {cwd}\n")
@@ -1451,7 +1521,7 @@ def handle_cli_init() -> int:
 
 
 def print_cli_help() -> None:
-    print("""FirmwareLoop (fwloop) — AI Agent Firmware Engineering & Lab Automation Platform (v0.0.12)
+    print("""FirmwareLoop (fwloop) — AI Agent Firmware Engineering & Lab Automation Platform (v0.0.13)
 
 Usage:
   fwloop [command]   (or: firmwareloop [command])
@@ -1482,7 +1552,7 @@ def main() -> None:
         elif cmd in ["setup", "register"]:
             sys.exit(handle_cli_setup())
         elif cmd in ["version", "-v", "--version"]:
-            print("FirmwareLoop v0.0.12")
+            print("FirmwareLoop v0.0.13")
             sys.exit(0)
         elif cmd in ["help", "-h", "--help"]:
             print_cli_help()
