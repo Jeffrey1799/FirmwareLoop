@@ -3,7 +3,23 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/) 与
 [Semantic Versioning](https://semver.org/)。版本记录按日期倒序。
 
-## [0.0.2] - Unreleased
+## [0.0.3] - 2026-08-18
+
+v0.0.3 目标：面向 AI Coding Agent（Antigravity CLI、Claude Code CLI、Qoder IDE 等）建立标准双层 MCP 架构与服务化接口。
+
+### Added
+
+- **FirmwareLoop Workflow MCP Server**：`tools/fw_mcp_server.py`（原生 JSON-RPC 2.0 stdio MCP 实现，8 个高阶工程工具：`fw_doctor` / `fw_build` / `fw_run_hil_test` / `fw_acceptance_scenario` / `fw_measure` / `fw_logic_capture` / `fw_logic_decode` / `fw_get_evidence`）
+- **多 Agent MCP 注册辅助脚本**：`tools/setup-agent-mcp.ps1`（检测并输出 Claude Code、Qoder、Antigravity/Cursor 注册命令及生成项目级 `.mcp.json`）
+- **Agent 项目指南**：`CLAUDE.md` 与 Antigravity Skill 定义 `skills/firmwareloop/SKILL.md`
+- **MCP 单元测试套件**：`tests/unit/test_mcp_server.py`（验证协议握手、工具发现、仿真测量与构建命令构造）
+- **双层 MCP 配置模板**：`.mcp.example.json` 更新为 FirmwareLoop 上层 + Agentic HIL 下层双层协同架构
+
+### Changed
+
+- 增强了 MCP 工具调用的超时管理与结构化 JSON 证据提取
+
+## [0.0.2] - 2026-08-17
 
 v0.0.2 目标：从 Simulator-first PoC 推进为 Real-Hardware-first 的可验证固件
 Agent 基础设施（Gap Analysis & Remediation）。
@@ -73,13 +89,3 @@ Agent 基础设施（Gap Analysis & Remediation）。
 - **CI**：GitHub Actions 无硬件全绿流水线（doctor→build→HIL→scenario）
 - **文档**：AI_DEV_GUIDE.md（Agent 强制规则）、
   docs/agentic-hil-integration.md（42 个 MCP 工具映射）、README
-
-### Changed
-
-- 项目名统一为 **FirmwareLoop**（原名占位 Open Embedder Alternative）
-
-## [未发布]
-
-- 真实硬件验收记录（M2 完成态：probe/flash/reset/UART 实测）
-- 真实 VISA 仪器 SCPI 覆写示例
-- Saleae Logic 2 MCP 实测验证

@@ -81,17 +81,31 @@ uart.log / measurements.json / final-report.json）。
 | 安全策略 | limits.yaml + 权限模型 | 无 | 无 | 弱 |
 | 迭代闭环 | build→测→改→重测（≤3 次） | 无 | 部分 | 无 |
 
+## 双层 MCP 架构 (Two-Tier MCP)
+
+FirmwareLoop 提供开箱即用的**双层 MCP 架构**，支持 AI Coding Agent（Claude Code、Antigravity、Qoder 等）在不同抽象层级灵活调度：
+
+1. **上层工作流 MCP (`firmwareloop`)**：面向工程构建、pytest 12项自动化 HIL 测试、安全测量与全链路验收（`tools/fw_mcp_server.py`）。
+2. **下层硬件驱动 MCP (`agentic-hil`)**：面向物理探针、JTAG/SWD 固件刷写、芯片复位、串口会话与符号级断点调试。
+
+```powershell
+# 一键查看或生成各大 Agent 的 MCP 注册命令
+.\tools\setup-agent-mcp.ps1
+```
+
 ## 目录结构
 
 ```
-├── tools/            doctor / build / test / flash / reset / can / logic_* /
-│                     instrument_cli / acceptance-scenario / common/
-├── tests/hil/        conftest + test_boot/uart/protocol/power/signal/logic
-├── lab/              lab.example.yaml / limits.yaml / protocol-decode.yaml
-├── test-plans/       smoke.yaml / regression.yaml
+├── tools/            fw_mcp_server / setup-agent-mcp / doctor / build / test /
+│                     flash / reset / can / logic_* / instrument_cli / acceptance-scenario
+├── tests/            unit/ (mcp_server) / hil/ / plans/ / safety/ / backend/
+├── lab/              lab.example.yaml / limits.example.yaml / protocol-decode.yaml
+├── test-plans/       smoke.yaml / real-smoke.yaml / regression.yaml
 ├── demo-firmware/    示例固件（CMake；宿主编译模拟 MCU，闭环验证载体）
-├── docs/             datasheets / reference-manuals / errata / schematics / test-specs
-├── .mcp.json         MCP 配置（agentic-hil + logic2）
+├── demo-make/        示例固件（Make；构建测试载体）
+├── docs/             DEPENDENCY_MATRIX / REUSE_PLAN / V0.0.2_GAP_VERIFICATION
+├── .mcp.example.json 双层 MCP 配置模板（firmwareloop + agentic-hil）
+├── CLAUDE.md         Claude Code CLI 指南
 └── AI_DEV_GUIDE.md   AGENT 强制规则
 ```
 
