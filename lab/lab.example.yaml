@@ -37,6 +37,21 @@ dut:
       - pattern: "Application started"
         timeout_ms: 3000
 
+# 自研/自定义调试工具接入模板（可通过 fwloop-adapter skill 交互配置）
+custom_tools:
+  flash:
+    enabled: false
+    command: "D:/Tools/my_flasher.exe --target {target_chip} --file {artifact_path}"
+    timeout_ms: 60000
+  reset:
+    enabled: false
+    command: "D:/Tools/my_reset.exe --port {uart_port}"
+    timeout_ms: 10000
+  log_capture:
+    enabled: false
+    command: "python D:/Tools/my_logger.py --port {uart_port} --out {output_file}"
+    timeout_ms: 30000
+
 # Instruments for tools/instrument_cli.py (Spec §14-16). backend=simulator
 # returns modelled values; backend=visa drives PyVISA/SCPI. Override SCPI
 # commands per instrument when your device differs from the default recipes.

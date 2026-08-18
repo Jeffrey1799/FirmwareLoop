@@ -18,7 +18,7 @@
 #>
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory = $true)][ValidateSet('simulator', 'agentic-hil', 'openocd', 'stm32cubeprogrammer', 'esptool', 'jlink', 'vendor')]
+    [Parameter(Mandatory = $true)][ValidateSet('simulator', 'agentic-hil', 'openocd', 'stm32cubeprogrammer', 'esptool', 'jlink', 'vendor', 'pyocd')]
     [string]$Backend,
     [string]$Artifact = 'artifacts/build/firmware.elf',
     [switch]$Json,

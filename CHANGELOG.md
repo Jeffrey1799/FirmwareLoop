@@ -3,6 +3,27 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/) 与
 [Semantic Versioning](https://semver.org/)。版本记录按日期倒序。
 
+## [0.0.9] - 2026-08-18
+
+v0.0.9 目标：新增 `fwloop-adapter` 自定义/私有调试与烧录工具接入专属 Skill，支持纯 GUI 上位机 4 级阶梯引导与多 Agent 技能库全自动注入。
+
+### Added
+
+- **自定义工具与 GUI 上位机接入 Skill（fwloop-adapter）**：
+  - 新增 `skills/fwloop-adapter/SKILL.md`，规范化 5 步接入流程与 3 种接入模式
+  - 制定面向纯 GUI 上位机的小白友好 4 级阶梯引导流程（探查目录资源 -> Python 代码代打 -> 致开发同事技术说明函 -> UI 自动化兜底）
+  - 梳理《向内部工具开发工程师对接的 5 大核心技术需求清单》（无界面 CLI、规范退出码、标准错误流、动态入参规范、超时复位）
+- **台架配置模板与工具链参数扩展**：
+  - `lab/lab.example.yaml` 增加 `custom_tools` 节点模板（flash / reset / log_capture）
+  - `tools/flash.ps1` 与 `tools/reset.ps1` 增加 pyocd 与 jlink 参数校验
+- **全局多 Agent 技能自动同步与脚手架集成**：
+  - `tools/setup-agent-mcp.ps1` 自动同步所有技能包到 Antigravity 与 Claude Code 全局目录
+  - `fwloop init` 脚手架自动在新工程生成 `skills/fwloop-adapter/SKILL.md`
+- **README.md 深度重构**：
+  - 移除所有 emoji，重构所有代码块为纯净可一键复制命令，增加「卸载与清理」章节
+- **测试覆盖与构建**：
+  - 11 项单元测试 100% 通过，成功构建 wheel 与 sdist 发布包
+
 ## [0.0.8] - 2026-08-18
 
 v0.0.8 目标：新增多智能体项目脚手架 `fwloop init` 与跨 Agent 规范体系（AGENTS.md、CLAUDE.md、GEMINI.md）。

@@ -28,7 +28,7 @@ def test_mcp_initialize():
     assert res is not None
     assert res["id"] == 1
     assert res["result"]["serverInfo"]["name"] == "firmwareloop"
-    assert res["result"]["serverInfo"]["version"] == "0.0.8"
+    assert res["result"]["serverInfo"]["version"] == "0.0.9"
     assert "tools" in res["result"]["capabilities"]
 
 
@@ -254,6 +254,7 @@ def test_mcp_call_fw_init_project(tmp_path):
     assert "lab/lab.yaml" in data.get("created_files", [])
     assert ".mcp.json" in data.get("created_files", [])
     assert "skills/firmwareloop/SKILL.md" in data.get("created_files", [])
+    assert "skills/fwloop-adapter/SKILL.md" in data.get("created_files", [])
 
     # Verify physical file existence and contents
     assert os.path.exists(os.path.join(target_dir, "AGENTS.md"))
@@ -262,6 +263,7 @@ def test_mcp_call_fw_init_project(tmp_path):
     assert os.path.exists(os.path.join(target_dir, "lab", "lab.yaml"))
     assert os.path.exists(os.path.join(target_dir, ".mcp.json"))
     assert os.path.exists(os.path.join(target_dir, "skills", "firmwareloop", "SKILL.md"))
+    assert os.path.exists(os.path.join(target_dir, "skills", "fwloop-adapter", "SKILL.md"))
 
     with open(os.path.join(target_dir, "lab", "lab.yaml"), encoding="utf-8") as f:
         lab_content = f.read()

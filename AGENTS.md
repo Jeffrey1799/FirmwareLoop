@@ -19,6 +19,10 @@ This repository is configured with **FirmwareLoop (`fwloop`)** for AI Agent-driv
 - **Lower-Tier (`agentic-hil`)**:
   - `probe_target()`, `flash_firmware()`, `reset_target()`, `com_session_*()`, `debug_*()`.
 
+## Available Skills
+- `skills/firmwareloop/SKILL.md`: Main firmware development, build, test, and measurement orchestrator.
+- `skills/fwloop-adapter/SKILL.md`: Integration guide for proprietary/custom flasher, reset, and log capture tools.
+
 ## Core Agent Rules & Principles
 1. **Real-Hardware-First & Zero Fake Results**: Never fake, simulate, or mock results during real firmware development. If toolchains (Keil5/GCC), debug probes (ST-LINK/J-Link), target MCU, or instruments are missing or disconnected, immediately fail closed with explicit error classes (`TOOLCHAIN_NOT_FOUND`, `PROBE_NOT_FOUND`, `TARGET_UNREACHABLE`) and actionable setup guidance for the user. Never claim success on incomplete conditions!
 2. **Evidence-Driven**: Never judge success by `exit code == 0` alone. Inspect Build Evidence + Runtime Evidence + Measurement Evidence + Assertion.

@@ -75,24 +75,38 @@ $report.agents.qoder = [ordered]@{
     }
 }
 
-# 3. Antigravity CLI / Gemini Code
+# 3. Antigravity CLI / Gemini Code & Claude Code Global Skills
 $antigravitySkillsRoot = Join-Path $env:USERPROFILE '.gemini\antigravity-cli\skills'
-$targetGlobalSkillDir = Join-Path $antigravitySkillsRoot 'firmwareloop'
-$sourceSkill = Join-Path $repoRoot 'skills\firmwareloop\SKILL.md'
+$claudeSkillsRoot = Join-Path $env:USERPROFILE '.claude\skills'
 
-$skillInstalled = $false
-if (Test-Path -LiteralPath (Split-Path $antigravitySkillsRoot)) {
-    if (Test-Path -LiteralPath $sourceSkill) {
-        New-Item -ItemType Directory -Force -Path $targetGlobalSkillDir | Out-Null
-        Copy-Item -LiteralPath $sourceSkill -Destination (Join-Path $targetGlobalSkillDir 'SKILL.md') -Force
-        $skillInstalled = $true
+$installedSkills = @()
+$sourceSkillsDir = Join-Path $repoRoot 'skills'
+if (Test-Path -LiteralPath $sourceSkillsDir) {
+    Get-ChildItem -Directory -Path $sourceSkillsDir | ForEach-Object {
+        $skillName = $_.Name
+        $sourceSkillFile = Join-Path $_.FullName 'SKILL.md'
+        if (Test-Path -LiteralPath $sourceSkillFile) {
+            # Sync to Antigravity
+            if (Test-Path -LiteralPath (Split-Path $antigravitySkillsRoot)) {
+                $targetDir = Join-Path $antigravitySkillsRoot $skillName
+                New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
+                Copy-Item -LiteralPath $sourceSkillFile -Destination (Join-Path $targetDir 'SKILL.md') -Force
+            }
+            # Sync to Claude
+            if (Test-Path -LiteralPath (Split-Path $claudeSkillsRoot)) {
+                $targetDir = Join-Path $claudeSkillsRoot $skillName
+                New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
+                Copy-Item -LiteralPath $sourceSkillFile -Destination (Join-Path $targetDir 'SKILL.md') -Force
+            }
+            $installedSkills += $skillName
+        }
     }
 }
 
 $report.agents.antigravity = [ordered]@{
     mcp_config_path = (Join-Path $repoRoot '.mcp.json')
-    global_skill_installed = $skillInstalled
-    global_skill_path = if ($skillInstalled) { Join-Path $targetGlobalSkillDir 'SKILL.md' } else { $null }
+    global_skills_installed = ($installedSkills.Count -gt 0)
+    installed_skills = $installedSkills
     note = "Antigravity automatically discovers project-level .mcp.json and global skills."
 }
 

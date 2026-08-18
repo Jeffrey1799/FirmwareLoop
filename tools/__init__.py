@@ -2,4 +2,4 @@
 FirmwareLoop - AI Agent Firmware Development and Lab Automation Platform.
 """
 
-__version__ = "0.0.8"
+__version__ = "0.0.9"

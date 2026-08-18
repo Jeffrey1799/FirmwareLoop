@@ -249,7 +249,7 @@ claude mcp remove --scope user agentic-hil
 ├── demo-firmware/    示例固件（CMake；宿主编译模拟 MCU，闭环验证载体）
 ├── demo-make/        示例固件（Make；构建测试载体）
 ├── docs/             DEPENDENCY_MATRIX / REUSE_PLAN / V0.0.2_GAP_VERIFICATION
-├── pyproject.toml    标准 Python 包配置与 CLI 入口声明 (v0.0.8)
+├── pyproject.toml    标准 Python 包配置与 CLI 入口声明 (v0.0.9)
 ├── .mcp.example.json 双层 MCP 配置模板（firmwareloop + agentic-hil）
 ├── AGENTS.md         通用智能体规范（Antigravity / Qoder / Cursor 等）
 ├── CLAUDE.md         Claude Code CLI 指南
@@ -259,7 +259,7 @@ claude mcp remove --scope user agentic-hil
 
 ---
 
-## 能力验证状态（v0.0.8）
+## 能力验证状态（v0.0.9）
 
 > 状态定义：`Implemented`（已实现）/ `Simulator Validated`（模拟验证）/
 > `Real Hardware Validated`（真机验证）/ `Experimental` / `Not Implemented`
@@ -268,6 +268,7 @@ claude mcp remove --scope user agentic-hil
 |---|---|
 | 双层 MCP 服务（13 个工作流与硬件工具） | Implemented + Protocol Validated（31/31 测试通过） |
 | 一键多 Agent 脚手架（fwloop init / fw_init_project） | Implemented + Multi-Agent Validated |
+| 自定义/私有调试工具接入 Skill（fwloop-adapter） | Implemented + Multi-Skill Validated |
 | 一键终端更新（fwloop update） | Implemented + Auto-updater Validated |
 | uvx 免克隆即时运行（Zero-Clone Mode） | Implemented + PEP 517/621 Validated |
 | Build：keil (UV4.exe) / cmake / make / platformio / iar / zephyr / esp-idf | Implemented + Multi-backend Validated |

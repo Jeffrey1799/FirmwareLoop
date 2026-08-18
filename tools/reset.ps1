@@ -12,7 +12,7 @@
 #>
 [CmdletBinding()]
 param(
-    [ValidateSet('simulator', 'agentic-hil', 'openocd', 'vendor')]
+    [ValidateSet('simulator', 'agentic-hil', 'openocd', 'vendor', 'pyocd', 'jlink')]
     [string]$Backend = 'simulator',
     [string]$ExpectedTarget,          # verify probe identity before reset (Spec §9)
     [switch]$Json
