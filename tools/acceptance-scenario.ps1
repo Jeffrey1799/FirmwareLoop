@@ -94,12 +94,12 @@ $report = [ordered]@{
 # ---- 1. build --------------------------------------------------------------------
 $build = Invoke-Tool 'build.ps1' @('-Configuration', 'Debug', '-Json')
 $report.steps.build = [ordered]@{
-    ok       = $build.ok
-    errors   = $build.errors
-    warnings = $build.warnings
-    artifact = $build.artifact
-    sha256   = $build.artifact_sha256
-    detail   = if ($build.ok) { $null } else { $build.diagnostics }
+    ok       = [bool]($build.PSObject.Properties['ok'] -and $build.ok)
+    errors   = if ($build.PSObject.Properties['errors']) { $build.errors } else { 1 }
+    warnings = if ($build.PSObject.Properties['warnings']) { $build.warnings } else { 0 }
+    artifact = if ($build.PSObject.Properties['artifact']) { $build.artifact } else { $null }
+    sha256   = if ($build.PSObject.Properties['artifact_sha256']) { $build.artifact_sha256 } else { $null }
+    detail   = if ($build.PSObject.Properties['diagnostics']) { $build.diagnostics } elseif ($build.PSObject.Properties['error']) { $build.error } else { $null }
 }
 
 # --- evidence: build.json + hardware.json (Spec §25; identity probing in real
@@ -114,8 +114,11 @@ if ($Mode -eq 'real') {
     $ahilTool = $null
     $g2 = Get-Command agentic-hil -ErrorAction SilentlyContinue
     if ($g2) { $ahilTool = $g2.Source }
-    if (-not $ahilTool -and (Test-Path -LiteralPath (Join-Path $repoRoot '.venv\Scripts\agentic-hil.exe'))) {
-        $ahilTool = Join-Path $repoRoot '.venv\Scripts\agentic-hil.exe'
+    if (-not $ahilTool) {
+        $c1 = Join-Path $repoRoot '.venv\Scripts\agentic-hil.exe'
+        $c2 = Join-Path $repoRoot '.venv/bin/agentic-hil'
+        if (Test-Path -LiteralPath $c1) { $ahilTool = $c1 }
+        elseif (Test-Path -LiteralPath $c2) { $ahilTool = $c2 }
     }
     if ($ahilTool) {
         $probes = Invoke-FwProcess -FilePath $ahilTool -Arguments @('debugger-probes') -WorkingDirectory $repoRoot -TimeoutMs 60000

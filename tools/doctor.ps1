@@ -19,13 +19,20 @@ Import-Module (Join-Path $PSScriptRoot 'common\fw.psm1') -Force
 
 $repoRoot = Get-FwRepoRoot
 $python = Resolve-FwPython -RepoRoot $repoRoot
-$venvBin = if ($python -and $python -match '.venv[\\/]Scripts[\\/]python.exe$') { Split-Path $python } else { $null }
+$venvBin = if ($python -and ($python -match '[\\/]\.venv[\\/](Scripts|bin)[\\/]python(\.exe)?$')) { Split-Path $python } else { $null }
 
 function Test-Tool {
     param([string]$Name)
     # prefer the project venv bin dir (tools installed without polluting PATH)
-    $candidate = if ($venvBin) { Join-Path $venvBin ($Name + '.exe') } else { $null }
-    $cmd = if ($candidate -and (Test-Path -LiteralPath $candidate)) {
+    $candidate = $null
+    if ($venvBin) {
+        if (Test-Path -LiteralPath (Join-Path $venvBin ($Name + '.exe'))) {
+            $candidate = Join-Path $venvBin ($Name + '.exe')
+        } elseif (Test-Path -LiteralPath (Join-Path $venvBin $Name)) {
+            $candidate = Join-Path $venvBin $Name
+        }
+    }
+    $cmd = if ($candidate) {
         Get-Item -LiteralPath $candidate
     } else {
         Get-Command $Name -ErrorAction SilentlyContinue

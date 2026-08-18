@@ -64,11 +64,20 @@ foreach ($c in $cases) {
 }
 
 # ---- 2. fake executable execution (keil / iar / west / esp-idf) ----------------
+$runningOnWindows = $IsWindows -or ($null -ne $env:OS -and $env:OS -like "*Windows*")
+$ext = if ($runningOnWindows) { '.cmd' } else { '.sh' }
+
+if (-not $runningOnWindows) {
+    Get-ChildItem -LiteralPath $fake -Filter *.sh | ForEach-Object {
+        try { & chmod +x $_.FullName } catch { }
+    }
+}
+
 $execCases = @(
-    @{ name = 'keil';  args = @('-Backend', 'keil', '-SourceDir', 'tests/backend/fixtures/keil-proj', '-BackendTool', (Join-Path $fake 'UV4.cmd'), '-Json') },
-    @{ name = 'iar';   args = @('-Backend', 'iar', '-SourceDir', 'tests/backend/fixtures/iar-proj', '-BackendTool', (Join-Path $fake 'IarBuild.cmd'), '-Json') },
-    @{ name = 'zephyr'; args = @('-Backend', 'zephyr', '-BackendTool', (Join-Path $fake 'west.cmd'), '-Json') },
-    @{ name = 'esp-idf'; args = @('-Backend', 'esp-idf', '-BackendTool', (Join-Path $fake 'idf.py.cmd'), '-Json') }
+    @{ name = 'keil';  args = @('-Backend', 'keil', '-SourceDir', 'tests/backend/fixtures/keil-proj', '-BackendTool', (Join-Path $fake "UV4$ext"), '-Json') },
+    @{ name = 'iar';   args = @('-Backend', 'iar', '-SourceDir', 'tests/backend/fixtures/iar-proj', '-BackendTool', (Join-Path $fake "IarBuild$ext"), '-Json') },
+    @{ name = 'zephyr'; args = @('-Backend', 'zephyr', '-BackendTool', (Join-Path $fake "west$ext"), '-Json') },
+    @{ name = 'esp-idf'; args = @('-Backend', 'esp-idf', '-BackendTool', (Join-Path $fake "idf.py$ext"), '-Json') }
 )
 foreach ($c in $execCases) {
     $r = Invoke-Build -ToolArgs $c.args
@@ -80,11 +89,15 @@ foreach ($c in $execCases) {
 }
 
 # ---- 3. cmake real build still green -------------------------------------------
-$r = Invoke-Build -ToolArgs @('-Configuration', 'Debug', '-Clean', '-Json')
+$r = Invoke-Build -ToolArgs @('-Backend', 'cmake', '-Configuration', 'Debug', '-Clean', '-Json')
 $jsonLine = ($r.stdout -split "`r?`n" | Where-Object { $_.TrimStart().StartsWith('{') } | Select-Object -Last 1)
-$j = $jsonLine | ConvertFrom-Json
-Assert -Name 'real.cmake' -Ok ($r.exit_code -eq 0 -and $j.ok -and $j.artifacts.primary.path -like '*firmware.elf*') `
-    -Detail "exit=$($r.exit_code) artifact=$($j.artifacts.primary.path)"
+$j = if ($jsonLine) { try { $jsonLine | ConvertFrom-Json } catch { $null } } else { $null }
+$hasArtifact = $false
+if ($j -and $j.PSObject.Properties['ok'] -and $j.ok -and $j.PSObject.Properties['artifacts'] -and $j.artifacts.PSObject.Properties['primary'] -and $j.artifacts.primary.PSObject.Properties['path']) {
+    $hasArtifact = $j.artifacts.primary.path -like '*firmware.elf*'
+}
+Assert -Name 'real.cmake' -Ok ($r.exit_code -eq 0 -and $hasArtifact) `
+    -Detail "exit=$($r.exit_code) output=$jsonLine"
 
 # ---- summary -------------------------------------------------------------------
 $failed = @($results | Where-Object { -not $_.ok }).Count

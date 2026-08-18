@@ -45,8 +45,9 @@ $env:FW_RUN_DIR = $runsDir
 $doctor = Invoke-FwProcess -FilePath 'pwsh' -Arguments @('-NoProfile', '-NonInteractive', '-File', (Join-Path $PSScriptRoot 'doctor.ps1'), '-Json') -WorkingDirectory $repoRoot -TimeoutMs 120000
 if ($doctor.exit_code -in @(0, 1)) {
     try {
-        $d = $doctor.stdout | ConvertFrom-Json
-        if ($d.checks) {
+        $jsonLine = ($doctor.stdout -split "`r?`n" | Where-Object { $_.TrimStart().StartsWith('{') } | Select-Object -Last 1)
+        $d = if ($jsonLine) { try { $jsonLine | ConvertFrom-Json } catch { $null } } else { $null }
+        if ($d -and $d.PSObject.Properties['checks'] -and $d.checks) {
             $deps = [ordered]@{}
             foreach ($p in $d.checks.PSObject.Properties) {
                 $v = $p.Value
@@ -55,7 +56,7 @@ if ($doctor.exit_code -in @(0, 1)) {
             }
             $deps | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $runsDir 'dependencies.json') -Encoding utf8
         }
-        if ($d.host) {
+        if ($d -and $d.PSObject.Properties['host'] -and $d.host) {
             $d.host | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $runsDir 'environment.json') -Encoding utf8
         }
     } catch {

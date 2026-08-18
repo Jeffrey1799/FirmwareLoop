@@ -28,7 +28,7 @@ def test_mcp_initialize():
     assert res is not None
     assert res["id"] == 1
     assert res["result"]["serverInfo"]["name"] == "firmwareloop"
-    assert res["result"]["serverInfo"]["version"] == "0.0.11"
+    assert res["result"]["serverInfo"]["version"] == "0.0.12"
     assert "tools" in res["result"]["capabilities"]
 
 
@@ -132,30 +132,43 @@ def test_mcp_call_fw_build_dry_run():
 
 
 def test_mcp_call_fw_configure_lab():
-    req = {
-        "jsonrpc": "2.0",
-        "id": 6,
-        "method": "tools/call",
-        "params": {
-            "name": "fw_configure_lab",
-            "arguments": {
-                "project_name": "Test_STM32_Project",
-                "build_backend": "keil",
-                "target_chip": "STM32F103C8",
-                "uart_port": "COM5",
-                "uart_baudrate": 115200
+    lab_path = os.path.join(REPO_ROOT, "lab", "lab.yaml")
+    orig_content = None
+    if os.path.exists(lab_path):
+        with open(lab_path, "r", encoding="utf-8") as f:
+            orig_content = f.read()
+
+    try:
+        req = {
+            "jsonrpc": "2.0",
+            "id": 6,
+            "method": "tools/call",
+            "params": {
+                "name": "fw_configure_lab",
+                "arguments": {
+                    "project_name": "Test_STM32_Project",
+                    "build_backend": "keil",
+                    "target_chip": "STM32F103C8",
+                    "uart_port": "COM5",
+                    "uart_baudrate": 115200
+                }
             }
         }
-    }
-    res = fw_mcp_server.process_request(req)
-    assert res is not None
-    assert "result" in res
-    content = res["result"]["content"]
-    data = json.loads(content[0]["text"])
-    assert data.get("ok") is True
-    assert "project.build_backend" in data.get("updated_fields", [])
-    assert data.get("config", {}).get("project", {}).get("build_backend") == "keil"
-    assert data.get("config", {}).get("project", {}).get("target_chip") == "STM32F103C8"
+        res = fw_mcp_server.process_request(req)
+        assert res is not None
+        assert "result" in res
+        content = res["result"]["content"]
+        data = json.loads(content[0]["text"])
+        assert data.get("ok") is True
+        assert "project.build_backend" in data.get("updated_fields", [])
+        assert data.get("config", {}).get("project", {}).get("build_backend") == "keil"
+        assert data.get("config", {}).get("project", {}).get("target_chip") == "STM32F103C8"
+    finally:
+        if orig_content is not None:
+            with open(lab_path, "w", encoding="utf-8") as f:
+                f.write(orig_content)
+        elif os.path.exists(lab_path):
+            os.remove(lab_path)
 
 
 def test_mcp_call_fw_scan_hardware():
@@ -181,6 +194,13 @@ def test_mcp_call_fw_scan_hardware():
 
 
 def test_mcp_call_fw_flash_and_reset_simulator():
+    # Ensure dummy artifact exists for unit test
+    dummy_artifact = os.path.join(REPO_ROOT, "artifacts", "build", "firmware.elf")
+    os.makedirs(os.path.dirname(dummy_artifact), exist_ok=True)
+    if not os.path.exists(dummy_artifact):
+        with open(dummy_artifact, "w") as f:
+            f.write("DUMMY_ELF_FOR_SIMULATOR_TEST")
+
     # Flash
     flash_req = {
         "jsonrpc": "2.0",

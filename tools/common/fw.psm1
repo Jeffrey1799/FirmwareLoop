@@ -76,18 +76,25 @@ function New-FwError {
 function Resolve-FwPython {
     <#
     .SYNOPSIS
-        Locate a project Python: prefer .venv\Scripts\python.exe relative to
-        repo root, then PATH. Never hardcoded absolute paths (Spec §25).
+        Locate a project Python: prefer .venv\Scripts\python.exe (Windows) or
+        .venv/bin/python (Linux/macOS) relative to repo root, then PATH.
+        Never hardcoded absolute paths (Spec §25).
     #>
     param([string]$RepoRoot)
     $candidates = @()
     if ($RepoRoot) {
         $candidates += (Join-Path $RepoRoot '.venv\Scripts\python.exe')
+        $candidates += (Join-Path $RepoRoot '.venv\bin\python')
+        $candidates += (Join-Path $RepoRoot '.venv/bin/python')
         $candidates += (Join-Path $RepoRoot 'venv\Scripts\python.exe')
+        $candidates += (Join-Path $RepoRoot 'venv\bin\python')
+        $candidates += (Join-Path $RepoRoot 'venv/bin/python')
     }
     foreach ($path in $candidates) {
         if (Test-Path -LiteralPath $path) { return (Resolve-Path -LiteralPath $path).Path }
     }
+    $fromPath = Get-Command python3 -ErrorAction SilentlyContinue
+    if ($fromPath) { return $fromPath.Source }
     $fromPath = Get-Command python -ErrorAction SilentlyContinue
     if ($fromPath) { return $fromPath.Source }
     return $null

@@ -308,7 +308,7 @@ claude mcp remove --scope user agentic-hil
 ├── demo-firmware/    示例固件（CMake；宿主编译模拟 MCU，闭环验证载体）
 ├── demo-make/        示例固件（Make；构建测试载体）
 ├── docs/             DEPENDENCY_MATRIX / REUSE_PLAN / V0.0.2_GAP_VERIFICATION
-├── pyproject.toml    标准 Python 包配置与 CLI 入口声明 (v0.0.11)
+├── pyproject.toml    标准 Python 包配置与 CLI 入口声明 (v0.0.12)
 ├── .mcp.example.json 双层 MCP 配置模板（firmwareloop + agentic-hil）
 ├── AGENTS.md         通用智能体规范（Antigravity / Qoder / Cursor 等）
 ├── CLAUDE.md         Claude Code CLI 指南
@@ -318,7 +318,7 @@ claude mcp remove --scope user agentic-hil
 
 ---
 
-## 能力验证状态（v0.0.11）
+## 能力验证状态（v0.0.12）
 
 > 状态定义：`Implemented`（已实现）/ `Simulator Validated`（模拟验证）/
 > `Real Hardware Validated`（真机验证）/ `Experimental` / `Not Implemented`

@@ -3,6 +3,20 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/) 与
 [Semantic Versioning](https://semver.org/)。版本记录按日期倒序。
 
+## [0.0.12] - 2026-08-18
+
+v0.0.12 目标：实现 `fwloop setup` 一键同时全自动配置 Google Antigravity、Claude Code 与 Qoder IDE 三大平台的全局 MCP 与 Skills。
+
+### Added
+
+- **三大 Agent 全局 MCP 一键全自动配置**：
+  - Antigravity：自动向 `~/.gemini/config/mcp_config.json` 注入 `firmwareloop` 与 `agentic-hil`（UTF-8 No-BOM 格式）
+  - Claude Code：严格遵循 Anthropic 官方规范自动向 `~/.claude.json` 的 `"mcpServers"` 注入 `fwloop` 与 `agentic-hil`
+  - Qoder IDE：通过 `qoder.cmd --add-mcp` 自动注入全局 User Profile
+  - 全局 Skills：自动同步 `firmwareloop` 与 `fwloop-adapter` 至 Antigravity 与 Claude Code 技能库
+- **跨平台纯 Python 引擎优化**：
+  - 在 `tools/fw_mcp_server.py` 内建原生配置引擎，消灭 Windows 命令行字符转义与 BOM 问题
+
 ## [0.0.11] - 2026-08-18
 
 v0.0.11 目标：修复 `fwloop setup` 脚本在 PowerShell 严格模式与全局安装环境下的变量未定义和 `Parent` 属性解析异常。

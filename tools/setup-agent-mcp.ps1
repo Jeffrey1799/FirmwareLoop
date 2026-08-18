@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Dual-Tier MCP setup and registration helper (v0.0.10).
+    Dual-Tier MCP setup and registration helper (v0.0.12).
     Inspects installed AI coding agents (Qoder, Claude Code, Antigravity, Cursor)
     and configures global MCP / skills or prints exact registration commands.
 
@@ -48,40 +48,74 @@ $report = [ordered]@{
     agents = [ordered]@{}
 }
 
-# 1. Claude Code CLI
+# 1. Claude Code CLI 全局 MCP 自动配置
 $claudeCmd = Get-Command claude -ErrorAction SilentlyContinue
+$claudeConfigUpdated = $false
+$claudeConfigFile = Join-Path $env:USERPROFILE '.claude.json'
+if (Test-Path -LiteralPath $claudeConfigFile) {
+    try {
+        $existingClaude = Get-Content -LiteralPath $claudeConfigFile -Raw -Encoding UTF8 | ConvertFrom-Json
+        if (-not $existingClaude.PSObject.Properties['mcpServers']) {
+            $existingClaude | Add-Member -MemberType NoteProperty -Name 'mcpServers' -Value ([pscustomobject]@{})
+        }
+        $existingClaude.mcpServers | Add-Member -MemberType NoteProperty -Name 'fwloop' -Value ([pscustomobject]@{ command = "fwloop" }) -Force
+        $existingClaude.mcpServers | Add-Member -MemberType NoteProperty -Name 'agentic-hil' -Value ([pscustomobject]@{ command = "agentic-hil"; args = @("mcp-stdio") }) -Force
+        $updatedClaudeStr = ConvertTo-Json -InputObject $existingClaude -Depth 20
+        $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+        [System.IO.File]::WriteAllText($claudeConfigFile, $updatedClaudeStr, $utf8NoBom)
+        $claudeConfigUpdated = $true
+    } catch {
+        # ignore non-fatal config write error
+    }
+}
+if ($claudeCmd -and -not $claudeConfigUpdated) {
+    try {
+        & $claudeCmd.Source mcp add --scope user fwloop -- fwloop | Out-Null
+        & $claudeCmd.Source mcp add --scope user agentic-hil -- agentic-hil mcp-stdio | Out-Null
+        $claudeConfigUpdated = $true
+    } catch {
+        # ignore non-fatal error
+    }
+}
 $report.agents.claude_code = [ordered]@{
     detected = ($null -ne $claudeCmd)
     path = if ($claudeCmd) { $claudeCmd.Source } else { $null }
+    configured = $claudeConfigUpdated
     registration_commands = @(
         "claude mcp add --scope user fwloop -- $fwCmdName",
         "claude mcp add --scope user agentic-hil -- $ahilCmdName"
     )
 }
 
-# 2. Qoder IDE / CLI
+# 2. Qoder IDE / CLI 全局 User Profile MCP 自动配置
 $qoderCmd = $null
-foreach ($name in @('qoder', 'qodercli')) {
+foreach ($name in @('qoder.cmd', 'qoder', 'qodercli')) {
     $c = Get-Command $name -ErrorAction SilentlyContinue
     if ($c) { $qoderCmd = $c; break }
+}
+$qoderConfigured = $false
+if ($qoderCmd) {
+    try {
+        $fwJsonStr = '{"name":"firmwareloop","command":"fwloop"}'
+        $ahilJsonStr = '{"name":"agentic-hil","command":"agentic-hil","args":["mcp-stdio"]}'
+        & $qoderCmd.Source --add-mcp $fwJsonStr | Out-Null
+        & $qoderCmd.Source --add-mcp $ahilJsonStr | Out-Null
+        $qoderConfigured = $true
+    } catch {
+        # ignore non-fatal error
+    }
 }
 $report.agents.qoder = [ordered]@{
     detected = ($null -ne $qoderCmd)
     path = if ($qoderCmd) { $qoderCmd.Source } else { $null }
-    registration_commands = if ($qoderCmd) {
-        @(
-            "$($qoderCmd.Name) mcp add --global fwloop -- $fwCmdName",
-            "$($qoderCmd.Name) mcp add --global agentic-hil -- $ahilCmdName"
-        )
-    } else {
-        @(
-            "qoder.cmd mcp add --global fwloop -- $fwCmdName",
-            "qoder.cmd mcp add --global agentic-hil -- $ahilCmdName"
-        )
-    }
+    user_profile_configured = $qoderConfigured
+    registration_commands = @(
+        "qoder.cmd --add-mcp '{\`"name\`":\`"firmwareloop\`",\`"command\`":\`"fwloop\`"}'",
+        "qoder.cmd --add-mcp '{\`"name\`":\`"agentic-hil\`",\`"command\`":\`"agentic-hil\`",\`"args\`":[\`"mcp-stdio\`"]}'"
+    )
 }
 
-# 3. Antigravity CLI / Gemini 全局 MCP 配置与 Skills
+# 3. Antigravity CLI / Gemini 全局 MCP 自动配置与 Skills
 $antigravityConfigDir = Join-Path $env:USERPROFILE '.gemini\config'
 $antigravityMcpConfigFile = Join-Path $antigravityConfigDir 'mcp_config.json'
 $antigravityMcpUpdated = $false
@@ -98,7 +132,8 @@ if (Test-Path -LiteralPath $antigravityConfigDir) {
         $existingJson.mcpServers | Add-Member -MemberType NoteProperty -Name 'firmwareloop' -Value ([pscustomobject]@{ command = "fwloop" }) -Force
         $existingJson.mcpServers | Add-Member -MemberType NoteProperty -Name 'agentic-hil' -Value ([pscustomobject]@{ command = "agentic-hil"; args = @("mcp-stdio") }) -Force
         $updatedJsonStr = ConvertTo-Json -InputObject $existingJson -Depth 10
-        [System.IO.File]::WriteAllText($antigravityMcpConfigFile, $updatedJsonStr, [System.Text.Encoding]::UTF8)
+        $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+        [System.IO.File]::WriteAllText($antigravityMcpConfigFile, $updatedJsonStr, $utf8NoBom)
         $antigravityMcpUpdated = $true
     } catch {
         # ignore non-fatal config write error
@@ -160,7 +195,8 @@ if ($WriteWorkspaceMcp) {
         }
     }
     $jsonContent = ConvertTo-Json -InputObject $mcpConfig -Depth 10
-    [System.IO.File]::WriteAllText($mcpJsonPath, $jsonContent, [System.Text.Encoding]::UTF8)
+    $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+    [System.IO.File]::WriteAllText($mcpJsonPath, $jsonContent, $utf8NoBom)
     $report.workspace_mcp_written = $mcpJsonPath
 }
 
@@ -186,7 +222,11 @@ if ($Json) {
     Write-Host "    $($report.agents.claude_code.registration_commands[1])"
     Write-Host ""
     Write-Host "[3] Qoder IDE:" -ForegroundColor Yellow
-    Write-Host "    - CLI: $($report.agents.qoder.registration_commands[0])"
+    if ($qoderConfigured) {
+        Write-Host "    - User Profile MCP: [OK] Automatically registered to Qoder User Profile" -ForegroundColor Green
+    } else {
+        Write-Host "    - User Profile MCP: Run $($report.agents.qoder.registration_commands[0])"
+    }
     Write-Host "    - Workspace: Project root '.mcp.json' is automatically detected"
     Write-Host ""
     Write-Host "============================================================" -ForegroundColor Cyan

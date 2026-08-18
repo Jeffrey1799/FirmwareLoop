@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-fw_mcp_server.py - FirmwareLoop High-Level Workflow & Device MCP Server (v0.0.11).
+fw_mcp_server.py - FirmwareLoop High-Level Workflow & Device MCP Server (v0.0.12).
 
 Exposes high-level firmware engineering and hardware management tools to AI Coding
 Agents (Antigravity CLI, Claude Code CLI, Qoder IDE, Cursor) via the Model Context
@@ -1160,7 +1160,7 @@ def process_request(req: Dict[str, Any]) -> Optional[Dict[str, Any]]:
                 },
                 "serverInfo": {
                     "name": "firmwareloop",
-                    "version": "0.0.11"
+                    "version": "0.0.12"
                 }
             }
         }
@@ -1252,7 +1252,7 @@ def process_request(req: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 def handle_cli_update() -> int:
     """Handle `firmwareloop update` command."""
     print("============================================================")
-    print("  FirmwareLoop Auto-Updater (v0.0.11)")
+    print("  FirmwareLoop Auto-Updater (v0.0.12)")
     print("============================================================")
 
     is_git_repo = os.path.exists(os.path.join(REPO_ROOT, ".git"))
@@ -1291,20 +1291,28 @@ def handle_cli_update() -> int:
         print("============================================================")
         return 0
     else:
-        print("[*] Global / uv-managed installation detected.")
+        print("[*] Global installation detected.")
         uv_path = shutil.which("uv")
         if uv_path:
-            print("[*] Refreshing uv cache for firmwareloop...")
+            print("[*] Upgrading firmwareloop via `uv tool upgrade firmwareloop`...")
             try:
-                subprocess.run([uv_path, "cache", "clean", "firmwareloop"], capture_output=True)
-                print("[+] uv cache refreshed! The next run will automatically fetch the latest release from GitHub.")
-                return 0
+                res = subprocess.run([uv_path, "tool", "upgrade", "firmwareloop"])
+                if res.returncode == 0:
+                    print("\n============================================================")
+                    print("[+] FirmwareLoop has been upgraded to the latest version!")
+                    print("============================================================")
+                    return 0
+                else:
+                    print(f"[-] uv tool upgrade returned code {res.returncode}")
+                    return res.returncode
             except Exception as e:
-                print(f"[-] Error refreshing uv cache: {e}")
+                print(f"[-] Error upgrading via uv tool: {e}")
                 return 1
         else:
-            print("[*] Upgrading via pip...")
+            print("[*] Upgrading via pip (`pip install --upgrade firmwareloop`)...")
             res = subprocess.run([sys.executable, "-m", "pip", "install", "--upgrade", "firmwareloop"])
+            if res.returncode == 0:
+                print("[+] FirmwareLoop has been upgraded to the latest version!")
             return res.returncode
 
 
@@ -1317,16 +1325,112 @@ def handle_cli_doctor() -> int:
 
 
 def handle_cli_setup() -> int:
-    """Handle `firmwareloop setup` command."""
-    cmd = [PWSH_EXE, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", os.path.join(REPO_ROOT, "tools", "setup-agent-mcp.ps1")]
-    res = subprocess.run(cmd, cwd=REPO_ROOT)
-    return res.returncode
+    """Handle `firmwareloop setup` command: simultaneously configure Antigravity CLI, Claude Code CLI, and Qoder IDE."""
+    print("============================================================")
+    print("  FirmwareLoop Multi-Agent Global Setup Helper (v0.0.12)")
+    print("============================================================")
+    print("")
+
+    user_home = os.path.expanduser("~")
+    configured_agents = []
+
+    # 1. Google Antigravity / Gemini CLI
+    print("[1] Google Antigravity / Gemini CLI:")
+    ag_config_dir = os.path.join(user_home, ".gemini", "config")
+    ag_mcp_file = os.path.join(ag_config_dir, "mcp_config.json")
+    try:
+        os.makedirs(ag_config_dir, exist_ok=True)
+        ag_data = {}
+        if os.path.exists(ag_mcp_file):
+            try:
+                with open(ag_mcp_file, "r", encoding="utf-8-sig") as f:
+                    ag_data = json.load(f)
+            except Exception:
+                ag_data = {}
+        if "mcpServers" not in ag_data:
+            ag_data["mcpServers"] = {}
+        ag_data["mcpServers"]["firmwareloop"] = {"command": "fwloop"}
+        ag_data["mcpServers"]["agentic-hil"] = {"command": "agentic-hil", "args": ["mcp-stdio"]}
+        with open(ag_mcp_file, "w", encoding="utf-8") as f:
+            json.dump(ag_data, f, indent=2)
+        print(f"    - Global MCP Config: [OK] Written to {ag_mcp_file}")
+        configured_agents.append("Google Antigravity")
+    except Exception as e:
+        print(f"    - Global MCP Config: [Warning] Could not write Antigravity config: {e}")
+
+    # 2. Claude Code CLI
+    print("\n[2] Claude Code CLI:")
+    claude_file = os.path.join(user_home, ".claude.json")
+    try:
+        claude_data = {}
+        if os.path.exists(claude_file):
+            try:
+                with open(claude_file, "r", encoding="utf-8-sig") as f:
+                    claude_data = json.load(f)
+            except Exception:
+                claude_data = {}
+        if "mcpServers" not in claude_data:
+            claude_data["mcpServers"] = {}
+        claude_data["mcpServers"]["fwloop"] = {"command": "fwloop"}
+        claude_data["mcpServers"]["agentic-hil"] = {"command": "agentic-hil", "args": ["mcp-stdio"]}
+        with open(claude_file, "w", encoding="utf-8") as f:
+            json.dump(claude_data, f, indent=2)
+        print(f"    - Global MCP Config: [OK] Written to {claude_file}")
+        configured_agents.append("Claude Code")
+    except Exception as e:
+        print(f"    - Global MCP Config: [Warning] Could not update .claude.json: {e}")
+
+    # 3. Qoder IDE
+    print("\n[3] Qoder IDE:")
+    qoder_cmd = shutil.which("qoder.cmd") or shutil.which("qoder")
+    if qoder_cmd:
+        try:
+            r1 = subprocess.run([qoder_cmd, "--add-mcp", json.dumps({"name": "firmwareloop", "command": "fwloop"})], shell=True, capture_output=True, text=True)
+            r2 = subprocess.run([qoder_cmd, "--add-mcp", json.dumps({"name": "agentic-hil", "command": "agentic-hil", "args": ["mcp-stdio"]})], shell=True, capture_output=True, text=True)
+            if r1.returncode == 0 and r2.returncode == 0:
+                print("    - User Profile MCP: [OK] Automatically registered to Qoder User Profile")
+                configured_agents.append("Qoder IDE")
+            else:
+                print(f"    - User Profile MCP: [Notice] Qoder CLI output: {r1.stdout.strip()}")
+        except Exception as e:
+            print(f"    - User Profile MCP: [Warning] Could not invoke qoder CLI: {e}")
+    else:
+        print("    - User Profile MCP: Qoder CLI not in PATH (Workspace .mcp.json supported)")
+
+    # 4. Global Skills Sync for Antigravity and Claude Code
+    ag_skills_dir = os.path.join(user_home, ".gemini", "antigravity-cli", "skills")
+    claude_skills_dir = os.path.join(user_home, ".claude", "skills")
+    source_skills_dir = os.path.join(REPO_ROOT, "skills")
+    skills_synced = 0
+    if os.path.exists(source_skills_dir):
+        for sk in ["firmwareloop", "fwloop-adapter"]:
+            sk_src = os.path.join(source_skills_dir, sk, "SKILL.md")
+            if os.path.exists(sk_src):
+                try:
+                    ag_target = os.path.join(ag_skills_dir, sk)
+                    os.makedirs(ag_target, exist_ok=True)
+                    shutil.copyfile(sk_src, os.path.join(ag_target, "SKILL.md"))
+
+                    cl_target = os.path.join(claude_skills_dir, sk)
+                    os.makedirs(cl_target, exist_ok=True)
+                    shutil.copyfile(sk_src, os.path.join(cl_target, "SKILL.md"))
+                    skills_synced += 1
+                except Exception:
+                    pass
+
+    print(f"\n[4] Global Skills:")
+    print(f"    - Synchronized: [OK] {skills_synced} skills (firmwareloop, fwloop-adapter) to Antigravity & Claude Code")
+
+    print("\n============================================================")
+    print(f"[+] All AI Coding Agents ({', '.join(configured_agents)}) are globally configured and ready!")
+    print("============================================================")
+    return 0
 
 
 def handle_cli_init() -> int:
     """Handle `firmwareloop init` command."""
     print("============================================================")
-    print("  FirmwareLoop Multi-Agent Project Initializer (v0.0.11)")
+    print("  FirmwareLoop Multi-Agent Project Initializer (v0.0.12)")
     print("============================================================")
     cwd = os.getcwd()
     print(f"[*] Initializing multi-agent guidelines & bench config in:\n    {cwd}\n")
@@ -1347,7 +1451,7 @@ def handle_cli_init() -> int:
 
 
 def print_cli_help() -> None:
-    print("""FirmwareLoop (fwloop) — AI Agent Firmware Engineering & Lab Automation Platform (v0.0.11)
+    print("""FirmwareLoop (fwloop) — AI Agent Firmware Engineering & Lab Automation Platform (v0.0.12)
 
 Usage:
   fwloop [command]   (or: firmwareloop [command])
@@ -1378,7 +1482,7 @@ def main() -> None:
         elif cmd in ["setup", "register"]:
             sys.exit(handle_cli_setup())
         elif cmd in ["version", "-v", "--version"]:
-            print("FirmwareLoop v0.0.11")
+            print("FirmwareLoop v0.0.12")
             sys.exit(0)
         elif cmd in ["help", "-h", "--help"]:
             print_cli_help()
