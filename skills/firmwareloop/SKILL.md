@@ -31,6 +31,7 @@ Use this skill when developing, building, testing, or diagnosing embedded firmwa
 ```
 
 ## Mandatory Rules
-1. **Max 3 Code Iterations**: Never loop infinitely fixing code.
-2. **Fail Closed on Safety**: Never bypass `limits.yaml`.
-3. **Verify Evidence**: Ensure all evidence is captured in `artifacts/runs/<run_id>/`.
+1. **Real-Hardware-First & Zero Fake Data**: Never fake or mock hardware results. When compilers, debuggers, or MCU targets are missing, fail closed immediately and output explicit error diagnostics and user setup guidance.
+2. **Max 3 Code Iterations**: Never loop infinitely fixing code.
+3. **Fail Closed on Safety**: Never bypass `limits.yaml`.
+4. **Verify Evidence**: Ensure all evidence is captured in `artifacts/runs/<run_id>/`.

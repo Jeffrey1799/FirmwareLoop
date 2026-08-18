@@ -23,6 +23,7 @@ When operating in this workspace with MCP enabled, you have access to two tiers 
 
 ## Core Agent Rules & Principles
 1. **Evidence-Driven**: Never judge success by `exit code == 0` alone. Always inspect Build Evidence + Runtime Evidence + Measurement Evidence + Assertion.
-2. **Safety First**: Never edit `lab/limits.yaml` to bypass safety checks. High-voltage/current operations outside bounds will result in `SAFETY_LIMIT`.
-3. **Iteration Limit**: For automated bug fixing, maximum 3 code iterations. If still failing after 3 attempts, stop and generate a diagnostic report.
-4. **Permanent Prohibitions**: Never write OTP, Fuse, Option Bytes, RDP, Secure Boot keys, or Mass Erase.
+2. **Real-Hardware-First & Zero Fake Results**: Never fake, simulate, or mock results during real firmware development. If toolchains (Keil5/GCC), debug probes (ST-LINK/J-Link), target MCU, or instruments are missing or disconnected, immediately fail closed with explicit error classes (`TOOLCHAIN_NOT_FOUND`, `PROBE_NOT_FOUND`, `TARGET_UNREACHABLE`) and actionable setup guidance for the user. Never claim success on incomplete conditions!
+3. **Safety First**: Never edit `lab/limits.yaml` to bypass safety checks. High-voltage/current operations outside bounds will result in `SAFETY_LIMIT`.
+4. **Iteration Limit**: For automated bug fixing, maximum 3 code iterations. If still failing after 3 attempts, stop and generate a diagnostic report.
+5. **Permanent Prohibitions**: Never write OTP, Fuse, Option Bytes, RDP, Secure Boot keys, or Mass Erase.

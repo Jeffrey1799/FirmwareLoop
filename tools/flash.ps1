@@ -61,9 +61,6 @@ New-Item -ItemType Directory -Force -Path (Split-Path $logFile) | Out-Null
 
 switch ($Backend) {
     'simulator' {
-        # GAP-003 (v0.0.2): simulator flash is a no-op acknowledgement - the
-        # simulated DUT is the compiled artifact itself, exercised by the HIL
-        # harness. Never presented as real flashing.
         Save-FwLog -Path $logFile -Content 'simulator backend: flash validated via firmware build + HIL run (no real programmer involved)'
         $result = [ordered]@{
             schema      = 'firmware-flash-result/v1'
@@ -79,17 +76,88 @@ switch ($Backend) {
         if ($Json) { Write-FwJson ([pscustomobject]$result) -Compact } else { Write-FwJson ([pscustomobject]$result) }
         exit 0
     }
+    'pyocd' {
+        $pyocdExe = Join-Path $repoRoot '.venv\Scripts\pyocd.exe'
+        if (-not (Test-Path -LiteralPath $pyocdExe)) {
+            $cmd = Get-Command pyocd -ErrorAction SilentlyContinue
+            if ($cmd) { $pyocdExe = $cmd.Source }
+        }
+        if (-not (Test-Path -LiteralPath $pyocdExe)) {
+            Exit-WithError -Class 'TOOLCHAIN_NOT_FOUND' -Message 'pyocd 未找到。请在 Python 环境中安装 pyocd (`uv pip install pyocd`)。' -Detail 'pyOCD 用于通过 ST-LINK / CMSIS-DAP 烧录 STM32 芯片。'
+        }
+        $targetChip = 'stm32f103rc'
+        $labYaml = Join-Path $repoRoot 'lab\lab.yaml'
+        if (Test-Path -LiteralPath $labYaml) {
+            $labContent = Get-Content -LiteralPath $labYaml -Raw
+            if ($labContent -match 'target_chip:\s*["'']?([^"''\r\n]+)') {
+                $targetChip = $matches[1].Trim()
+            }
+        }
+        $res = Invoke-FwProcess -FilePath $pyocdExe -Arguments @('flash', '-t', $targetChip.ToLowerInvariant(), $full) -WorkingDirectory $repoRoot -TimeoutMs $TimeoutMs -StdoutFile $logFile
+        if ($res.timed_out) {
+            Exit-WithError -Class 'TIMEOUT' -Message "pyocd 烧录超时（${TimeoutMs}ms）。" -Detail $logFile
+        }
+        if ($res.exit_code -ne 0) {
+            Exit-WithError -Class 'FLASH_ERROR' -Message "pyocd 烧录失败：未检测到物理探针或目标 MCU 无响应。请确保 ST-LINK / DAPLink 已插入 USB 接口并正确连接 SWD 信号线（SWCLK/SWDIO/GND/3V3）。" -Detail ($res.stdout + "`n" + $res.stderr)
+        }
+        $result = [ordered]@{
+            schema      = 'firmware-flash-result/v1'
+            ok          = $true
+            backend     = 'pyocd'
+            target      = $targetChip
+            artifact    = $full
+            artifact_sha256 = (Get-FileHash -LiteralPath $full -Algorithm SHA256).Hash.ToLowerInvariant()
+            log         = (Resolve-Path -LiteralPath $logFile).Path
+            generated_at = Get-FwTimestamp
+        }
+        if ($Json) { Write-FwJson ([pscustomobject]$result) -Compact } else { Write-FwJson ([pscustomobject]$result) }
+        exit 0
+    }
+    'jlink' {
+        $jlinkExe = (Get-Command JLink.exe -ErrorAction SilentlyContinue)?.Source
+        if (-not $jlinkExe) {
+            $candidates = @(
+                "C:\Program Files\SEGGER\JLink\JLink.exe",
+                "C:\Program Files (x86)\SEGGER\JLink\JLink.exe"
+            )
+            foreach ($c in $candidates) {
+                if (Test-Path -LiteralPath $c) { $jlinkExe = $c; break }
+            }
+        }
+        if (-not $jlinkExe) {
+            Exit-WithError -Class 'TOOLCHAIN_NOT_FOUND' -Message '未找到 SEGGER JLink.exe。请安装官方 SEGGER J-Link 驱动软件包。' -Detail '下载地址: https://www.segger.com/downloads/jlink/'
+        }
+        $cmdScript = Join-Path $repoRoot "artifacts\logs\jlink_flash_$stamp.jlink"
+        $scriptContent = "r`nh`nloadfile $full`nr`ng`nq`n"
+        Set-Content -LiteralPath $cmdScript -Value $scriptContent -Encoding ASCII
+        $targetChip = 'STM32F103C8'
+        $res = Invoke-FwProcess -FilePath $jlinkExe -Arguments @('-device', $targetChip, '-if', 'SWD', '-speed', '4000', '-autoconnect', '1', '-CommanderScript', $cmdScript) -WorkingDirectory $repoRoot -TimeoutMs $TimeoutMs -StdoutFile $logFile
+        if ($res.timed_out) {
+            Exit-WithError -Class 'TIMEOUT' -Message "J-Link 烧录超时（${TimeoutMs}ms）。" -Detail $logFile
+        }
+        if ($res.exit_code -ne 0) {
+            Exit-WithError -Class 'FLASH_ERROR' -Message "J-Link 烧录失败：未连接 J-Link 探针或目标板未供电。" -Detail ($res.stdout + "`n" + $res.stderr)
+        }
+        $result = [ordered]@{
+            schema      = 'firmware-flash-result/v1'
+            ok          = $true
+            backend     = 'jlink'
+            target      = $targetChip
+            artifact    = $full
+            artifact_sha256 = (Get-FileHash -LiteralPath $full -Algorithm SHA256).Hash.ToLowerInvariant()
+            log         = (Resolve-Path -LiteralPath $logFile).Path
+            generated_at = Get-FwTimestamp
+        }
+        if ($Json) { Write-FwJson ([pscustomobject]$result) -Compact } else { Write-FwJson ([pscustomobject]$result) }
+        exit 0
+    }
     'agentic-hil' {
-        # GAP-003 (v0.0.2): NO guessed CLI. Agentic HIL 0.14 has no 'flash'
-        # subcommand; flashing is done through its MCP tools (flash_firmware /
-        # artifact_upload) in Qoder, or through the Test Reactor plan in
-        # headless runs. This wrapper intentionally refuses to guess.
         Exit-WithError -Class 'REAL_HARDWARE_REQUIRED' `
-            -Message "flash via Agentic HIL is not driven from this wrapper; use the Qoder MCP tool flash_firmware, or a test-reactor plan (test-plans/real-smoke.yaml)." `
-            -Detail "GAP-003: guessed CLI paths are banned (agentic-hil 0.14.0 CLI has no flash subcommand)."
+            -Message "Agentic HIL 烧录请直接使用 MCP 工具 flash_firmware，或执行 test-plans/real-smoke.yaml。" `
+            -Detail "禁止随意使用伪造的 CLI。"
     }
     default {
-        Exit-WithError -Class 'CONFIG_ERROR' -Message "backend '$Backend' is not configured on this machine yet." -Detail 'Flash is intentionally not configured until real hardware integration (Spec M2).'
+        Exit-WithError -Class 'CONFIG_ERROR' -Message "烧录后端 '$Backend' 尚未在本机配置。" -Detail '请在 lab/lab.yaml 中配置有效的烧录器后端（pyocd, jlink, stm32cubeprogrammer 等）。'
     }
 }
 

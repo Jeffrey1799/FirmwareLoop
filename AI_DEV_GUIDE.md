@@ -39,10 +39,11 @@ CAPABILITY_GAP → 必须人工批准后才可自研
 - Adapter 超 300 LOC 必须说明为什么现有工具不满足。
 - Headless 执行禁止自写 MCP Client（用 Agentic HIL Test Reactor / pytest 插件）。
 - `backend=visa` 下禁止合成数据；不支持 → `CAPABILITY_NOT_SUPPORTED`。
+- **真实开发铁律（Zero-Fake Principle）**：严禁在非显式 simulator 模式下伪造任何构建、烧录、复位、串口或测量结果。一旦条件不满足（如探针未连接、目标 MCU 无响应、Keil/GCC 编译器缺失、COM 口被占用），必须立即 Fail-Closed 抛出明确错误并给出安装/配置指引（Resolution Guidance），绝不能假装成功！
 
 ```text
-允许：simulator backend → synthetic data
-禁止：visa backend      → fake waveform / ok=true
+允许：显式 simulator backend (脱机 CI 验证) → synthetic data
+禁止：非 simulator 模式下 → fake waveform / fake flash / ok=true
 ```
 
 ---

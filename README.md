@@ -197,13 +197,13 @@ fwloop version        # 或: firmwareloop version
 ├── demo-firmware/    示例固件（CMake；宿主编译模拟 MCU，闭环验证载体）
 ├── demo-make/        示例固件（Make；构建测试载体）
 ├── docs/             DEPENDENCY_MATRIX / REUSE_PLAN / V0.0.2_GAP_VERIFICATION
-├── pyproject.toml    标准 Python 包配置与 CLI 入口声明 (v0.0.6)
+├── pyproject.toml    标准 Python 包配置与 CLI 入口声明 (v0.0.7)
 ├── .mcp.example.json 双层 MCP 配置模板（firmwareloop + agentic-hil）
 ├── CLAUDE.md         Claude Code CLI 指南
 └── AI_DEV_GUIDE.md   AGENT 强制规则
 ```
 
-## 能力验证状态（v0.0.6）
+## 能力验证状态（v0.0.7）
 
 > 状态定义：`Implemented`（已实现）/ `Simulator Validated`（模拟验证）/
 > `Real Hardware Validated`（真机验证）/ `Experimental` / `Not Implemented`

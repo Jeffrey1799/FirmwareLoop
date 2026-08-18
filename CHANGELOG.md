@@ -3,6 +3,19 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/) 与
 [Semantic Versioning](https://semver.org/)。版本记录按日期倒序。
 
+## [0.0.7] - 2026-08-18
+
+v0.0.7 目标：落实 Real-Hardware-First 与 Zero-Fake 真实开发铁律，全面升级 pyOCD / J-Link 物理探针直连驱动与严格异常阻断。
+
+### Added
+
+- **真实硬件直连驱动**：
+  - `tools/flash.ps1` 增加 `pyocd`（ST-LINK / DAPLink）与 `jlink` 原生 SWD 固件烧录
+  - `tools/reset.ps1` 增加 `pyocd` 与 `jlink` 真实硬件复位命令与看门狗
+- **零伪造（Zero-Fake）铁律强制落地**：
+  - 严禁在硬件/工具链不足时输出假成功结果，严格 Fail-Closed 并输出明确排查指引（`TOOLCHAIN_NOT_FOUND`, `PROBE_NOT_FOUND`, `TARGET_UNREACHABLE`）
+  - 同步更新 `CLAUDE.md`、`skills/firmwareloop/SKILL.md` 与 `AI_DEV_GUIDE.md`
+
 ## [0.0.6] - 2026-08-18
 
 v0.0.6 目标：新增 `firmwareloop update` 一键终端更新命令与 CLI 调度器。

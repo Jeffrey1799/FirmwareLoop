@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-fw_mcp_server.py - FirmwareLoop High-Level Workflow & Device MCP Server (v0.0.6).
+fw_mcp_server.py - FirmwareLoop High-Level Workflow & Device MCP Server (v0.0.7).
 
 Exposes high-level firmware engineering and hardware management tools to AI Coding
 Agents (Antigravity CLI, Claude Code CLI, Qoder IDE, Cursor) via the Model Context
@@ -827,7 +827,7 @@ def process_request(req: Dict[str, Any]) -> Optional[Dict[str, Any]]:
                 },
                 "serverInfo": {
                     "name": "firmwareloop",
-                    "version": "0.0.6"
+                    "version": "0.0.7"
                 }
             }
         }
@@ -919,7 +919,7 @@ def process_request(req: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 def handle_cli_update() -> int:
     """Handle `firmwareloop update` command."""
     print("============================================================")
-    print("  FirmwareLoop Auto-Updater (v0.0.6)")
+    print("  FirmwareLoop Auto-Updater (v0.0.7)")
     print("============================================================")
 
     is_git_repo = os.path.exists(os.path.join(REPO_ROOT, ".git"))
@@ -991,7 +991,7 @@ def handle_cli_setup() -> int:
 
 
 def print_cli_help() -> None:
-    print("""FirmwareLoop (fwloop) — AI Agent Firmware Engineering & Lab Automation Platform (v0.0.6)
+    print("""FirmwareLoop (fwloop) — AI Agent Firmware Engineering & Lab Automation Platform (v0.0.7)
 
 Usage:
   fwloop [command]   (or: firmwareloop [command])
@@ -1019,7 +1019,7 @@ def main() -> None:
         elif cmd in ["setup", "register"]:
             sys.exit(handle_cli_setup())
         elif cmd in ["version", "-v", "--version"]:
-            print("FirmwareLoop v0.0.6")
+            print("FirmwareLoop v0.0.7")
             sys.exit(0)
         elif cmd in ["help", "-h", "--help"]:
             print_cli_help()
