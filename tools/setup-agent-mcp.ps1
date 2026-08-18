@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Dual-Tier MCP setup and registration helper (v0.0.3).
+    Dual-Tier MCP setup and registration helper (v0.0.4).
     Inspects installed AI coding agents (Qoder, Claude Code, Antigravity, Cursor)
     and prints/generates exact registration commands and workspace configuration.
 
@@ -109,7 +109,7 @@ if ($Json) {
     Write-FwJson ([pscustomobject]$report)
 } else {
     Write-Host "============================================================" -ForegroundColor Cyan
-    Write-Host "FirmwareLoop v0.0.3 - Dual-Tier MCP Setup Helper" -ForegroundColor Green
+    Write-Host "FirmwareLoop v0.0.4 - Dual-Tier MCP Setup Helper" -ForegroundColor Green
     Write-Host "============================================================" -ForegroundColor Cyan
     Write-Host ""
     Write-Host "[1] Claude Code CLI Registration:" -ForegroundColor Yellow

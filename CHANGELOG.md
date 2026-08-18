@@ -3,6 +3,18 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/) 与
 [Semantic Versioning](https://semver.org/)。版本记录按日期倒序。
 
+## [0.0.4] - 2026-08-18
+
+v0.0.4 目标：交互式台架配置与硬件管理工具增强，实现零命令行干预的 Agent 对话式开发与调试。
+
+### Added
+
+- **交互式台架配置工具**：新增 `fw_configure_lab`，支持 Agent 在对话中直接读写 `lab/lab.yaml`（Keil/CMake 构建后端、STM32 芯片型号、串口 COM 与波特率）
+- **硬件探针与串口扫描工具**：新增 `fw_scan_hardware`，自动探测 ST-LINK / J-Link 调试器、MCU 目标与活跃串口
+- **固件烧录与芯片复位快捷入口**：新增 `fw_flash` 与 `fw_reset` 工具
+- **I2C 协议测试增强**：`fw_logic_capture` 与 `fw_logic_decode` 原生支持 I2C 速率、地址及 ACK 断言
+- **单元测试套件扩充**：`tests/unit/test_mcp_server.py` 扩充至 8 项测试，全量 28 项 pytest 测试 100% 通过
+
 ## [0.0.3] - 2026-08-18
 
 v0.0.3 目标：面向 AI Coding Agent（Antigravity CLI、Claude Code CLI、Qoder IDE 等）建立标准双层 MCP 架构与服务化接口。

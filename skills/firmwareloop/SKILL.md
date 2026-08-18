@@ -1,6 +1,6 @@
 ---
 name: firmwareloop
-description: FirmwareLoop workflow skill for orchestrating firmware builds, multi-backend compilation, pytest HIL testing, logic analyzer captures, PyVISA instrument measurements, and end-to-end hardware acceptance.
+description: FirmwareLoop workflow skill for orchestrating firmware builds (Keil/CMake/Make/etc.), probe detection (ST-LINK/J-Link), interactive lab configuration, pytest HIL testing, I2C/SPI logic analyzer captures, PyVISA instrument measurements, and end-to-end hardware acceptance.
 ---
 
 # FirmwareLoop Skill
@@ -11,11 +11,15 @@ Use this skill when developing, building, testing, or diagnosing embedded firmwa
 
 ### Upper-Tier MCP Tools (`firmwareloop`)
 - `fw_doctor`: Run environmental health check.
-- `fw_build`: Compile firmware across 7 backends (CMake, Make, Keil, IAR, PlatformIO, Zephyr, ESP-IDF).
+- `fw_configure_lab`: Interactively configure or update project parameters, target chip (e.g. STM32F103C8), build backend (e.g. keil), source directory, COM port, and debugger probe in `lab/lab.yaml`.
+- `fw_scan_hardware`: Scan and identify attached hardware debuggers (ST-LINK, J-Link, CMSIS-DAP) and COM ports.
+- `fw_build`: Compile firmware across 7 backends (Keil, CMake, Make, IAR, PlatformIO, Zephyr, ESP-IDF).
+- `fw_flash`: Flash compiled firmware image into target MCU.
+- `fw_reset`: Hardware or software reset of the target MCU.
 - `fw_run_hil_test`: Run 12-item pytest HIL automated testing.
 - `fw_acceptance_scenario`: Execute end-to-end acceptance scenario.
 - `fw_measure`: Query PyVISA/SCPI instrument readings (frequency, duty cycle, Vpp, voltage, current).
-- `fw_logic_capture` / `fw_logic_decode`: Digital protocol capture and verification.
+- `fw_logic_capture` / `fw_logic_decode`: Digital protocol capture and verification (I2C, SPI, UART).
 - `fw_get_evidence`: Retrieve audit run artifacts and reports.
 
 ### Standard CLI Fallback (when MCP is not connected)

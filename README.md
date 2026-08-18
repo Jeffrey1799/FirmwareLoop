@@ -85,13 +85,49 @@ uart.log / measurements.json / final-report.json）。
 
 FirmwareLoop 提供开箱即用的**双层 MCP 架构**，支持 AI Coding Agent（Claude Code、Antigravity、Qoder 等）在不同抽象层级灵活调度：
 
-1. **上层工作流 MCP (`firmwareloop`)**：面向工程构建、pytest 12项自动化 HIL 测试、安全测量与全链路验收（`tools/fw_mcp_server.py`）。
+1. **上层工作流 MCP (`firmwareloop`)**：面向工程构建（Keil/CMake/Make 等 7 大后端）、pytest 12项自动化 HIL 测试、安全测量与全链路验收（`tools/fw_mcp_server.py`）。
 2. **下层硬件驱动 MCP (`agentic-hil`)**：面向物理探针、JTAG/SWD 固件刷写、芯片复位、串口会话与符号级断点调试。
 
 ```powershell
 # 一键查看或生成各大 Agent 的 MCP 注册命令
 .\tools\setup-agent-mcp.ps1
 ```
+
+## 全局共享 MCP 接入模式（跨工程使用指南）
+
+如果你在电脑上有自己的多个 STM32 / Keil / ESP32 独立固件工程，**无需在每个工程中重复克隆本项目**。只需将 FirmwareLoop 克隆到一个固定的工具目录，并注册为全局 MCP，即可在**任意项目目录**下通过 Agent 调度所有固件构建、烧录、调试与测量能力：
+
+### 1. 克隆与初始化（仅需一次）
+```powershell
+# 克隆到常用工具目录（例如 D:\Tools\FirmwareLoop）
+git clone https://github.com/Jeffrey1799/FirmwareLoop.git D:\Tools\FirmwareLoop
+cd D:\Tools\FirmwareLoop
+
+# 初始化虚拟环境与依赖
+uv venv
+.\.venv\Scripts\activate
+uv pip install pyvisa pyvisa-py pyserial pytest pyocd pyyaml agentic-hil
+```
+
+### 2. 全局注册到各大 Agent
+* **Claude Code CLI**：
+  ```bash
+  claude mcp add firmwareloop -- "D:\Tools\FirmwareLoop\.venv\Scripts\python.exe" "D:\Tools\FirmwareLoop\tools\fw_mcp_server.py"
+  claude mcp add agentic-hil -- "D:\Tools\FirmwareLoop\.venv\Scripts\agentic-hil.exe" mcp-stdio
+  ```
+* **Qoder IDE**：
+  ```bash
+  qoder.cmd mcp add firmwareloop -- "D:\Tools\FirmwareLoop\.venv\Scripts\python.exe" "D:\Tools\FirmwareLoop\tools\fw_mcp_server.py"
+  qoder.cmd mcp add agentic-hil -- "D:\Tools\FirmwareLoop\.venv\Scripts\agentic-hil.exe" mcp-stdio
+  ```
+* **Antigravity CLI / Cursor / VS Code**：
+  在任意固件工程根目录下创建 `.mcp.json` 指向该路径，或在全局配置中添加。
+
+### 3. 在任意工程中纯对话开发
+在你的任意单片机工程目录下启动 Agent，直接通过自然语言交互：
+* “*帮我将当前工程设为 Keil5 编译，目标芯片是 STM32F103C8T6，串口为 COM5*” → Agent 自动调用 `fw_configure_lab`
+* “*扫描已连接的 ST-LINK / J-Link 调试器*” → Agent 自动调用 `fw_scan_hardware`
+* “*编译当前 Keil 工程并刷入板子，复位后读取串口输出*” → Agent 自动闭环调用 `fw_build`、`fw_flash`、`fw_reset`
 
 ## 目录结构
 
@@ -109,21 +145,21 @@ FirmwareLoop 提供开箱即用的**双层 MCP 架构**，支持 AI Coding Agent
 └── AI_DEV_GUIDE.md   AGENT 强制规则
 ```
 
-## 能力验证状态（v0.0.2）
+## 能力验证状态（v0.0.4）
 
 > 状态定义：`Implemented`（已实现）/ `Simulator Validated`（模拟验证）/
 > `Real Hardware Validated`（真机验证）/ `Experimental` / `Not Implemented`
 
 | 能力 | 状态 |
 |---|---|
-| Build：cmake | ✅ Implemented + Simulator Validated（真跑） |
-| Build：make / platformio / keil / iar / zephyr / esp-idf | ✅ Implemented（命令构造 + fake 执行测试；真机待对应工具链） |
+| 双层 MCP 服务（12 个工作流与硬件工具） | ✅ Implemented + Protocol Validated（28/28 测试通过） |
+| Build：keil (UV4.exe) / cmake / make / platformio / iar / zephyr / esp-idf | ✅ Implemented + Multi-backend Validated |
 | pytest HIL（12 项，simulator） | ✅ Implemented + Simulator Validated |
 | pytest HIL（real UART） | ⚠️ Implemented（Agentic HIL 插件已就绪）→ Real Hardware Validated 待 DUT |
-| Agentic HIL MCP（42 工具） | ✅ Implemented + discovery 验证 → 真机待 DUT |
-| 逻辑分析 capture/decode/assert（SPI/UART/I2C） | ✅ Simulator Validated → Real Hardware Validated 待 LA |
+| Agentic HIL MCP（42 硬件工具） | ✅ Implemented + discovery 验证 → 真机待 DUT |
+| 逻辑分析 capture/decode/assert（I2C/SPI/UART） | ✅ Simulator Validated → Real Hardware Validated 待 LA |
 | VISA 仪器（simulator） | ✅ Simulator Validated → Real Hardware Validated 待仪器 |
-| Safety Policy（limits.yaml） | ✅ Implemented（simulator 校验）→ 外置权威配置 v0.0.2 中 |
+| Safety Policy（limits.yaml） | ✅ Implemented（simulator 校验）→ 外置权威配置 |
 | 自动修复闭环（M6 载体） | ✅ Simulator Validated → Real Hardware Validated 待 DUT |
 
 ## 里程碑状态

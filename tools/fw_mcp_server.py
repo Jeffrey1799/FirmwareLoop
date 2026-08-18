@@ -1,19 +1,24 @@
 #!/usr/bin/env python3
 """
-fw_mcp_server.py - FirmwareLoop High-Level Workflow MCP Server (v0.0.3).
+fw_mcp_server.py - FirmwareLoop High-Level Workflow & Device MCP Server (v0.0.4).
 
-Exposes high-level firmware engineering tools to AI Coding Agents (Antigravity CLI,
-Claude Code CLI, Qoder IDE, Cursor) via the Model Context Protocol (JSON-RPC 2.0 stdio).
+Exposes high-level firmware engineering and hardware management tools to AI Coding
+Agents (Antigravity CLI, Claude Code CLI, Qoder IDE, Cursor) via the Model Context
+Protocol (JSON-RPC 2.0 stdio).
 
 Tools provided:
   - fw_doctor: Environment & toolchain diagnostic (doctor.ps1)
   - fw_build: Multi-backend firmware compilation & diagnostics (build.ps1)
+  - fw_flash: Flash firmware image to target MCU (flash.ps1 / agentic-hil)
+  - fw_reset: Reset physical or simulated target MCU (reset.ps1)
   - fw_run_hil_test: Hardware-in-the-loop pytest suite (test.ps1)
   - fw_acceptance_scenario: End-to-end acceptance scenario (acceptance-scenario.ps1)
   - fw_measure: Controlled PyVISA/SCPI instrument measurement (instrument_cli.py)
   - fw_logic_capture: Logic analyzer protocol capture (logic_capture.ps1)
   - fw_logic_decode: Logic analyzer protocol decoding & assertion (logic_decode.ps1)
   - fw_get_evidence: Read structured audit run evidence (artifacts/runs/)
+  - fw_configure_lab: Interactively configure project, build backend, chip & ports (lab.yaml)
+  - fw_scan_hardware: Auto-detect connected ST-LINK / J-Link probes, MCU targets & COM ports
 """
 
 from __future__ import annotations
@@ -26,8 +31,15 @@ import sys
 import traceback
 from typing import Any, Dict, List, Optional
 
+try:
+    import yaml
+except ImportError:
+    yaml = None
+
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PYTHON_EXE = sys.executable
+AHIL_EXE = os.path.join(REPO_ROOT, ".venv", "Scripts", "agentic-hil.exe")
+PYOCD_EXE = os.path.join(REPO_ROOT, ".venv", "Scripts", "pyocd.exe")
 
 
 def find_powershell() -> str:
@@ -136,6 +148,39 @@ def handle_fw_build(args: Dict[str, Any]) -> Dict[str, Any]:
 
     timeout_ms = args.get("timeout_ms", 300000)
     res = run_process(cmd, timeout=int(timeout_ms / 1000) + 10)
+    if res.get("data"):
+        return res["data"]
+    return res
+
+
+def handle_fw_flash(args: Dict[str, Any]) -> Dict[str, Any]:
+    script = os.path.join(REPO_ROOT, "tools", "flash.ps1")
+    backend = args.get("backend", "simulator")
+    artifact = args.get("artifact_path", "artifacts/build/firmware.elf")
+
+    cmd = [
+        PWSH_EXE, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+        "-File", script, "-Backend", backend, "-Artifact", artifact, "-Json"
+    ]
+    res = run_process(cmd, timeout=120)
+    if res.get("data"):
+        return res["data"]
+    return res
+
+
+def handle_fw_reset(args: Dict[str, Any]) -> Dict[str, Any]:
+    script = os.path.join(REPO_ROOT, "tools", "reset.ps1")
+    backend = args.get("backend", "simulator")
+    expected = args.get("expected_target")
+
+    cmd = [
+        PWSH_EXE, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+        "-File", script, "-Backend", backend, "-Json"
+    ]
+    if expected:
+        cmd.extend(["-ExpectedTarget", expected])
+
+    res = run_process(cmd, timeout=30)
     if res.get("data"):
         return res["data"]
     return res
@@ -292,6 +337,142 @@ def handle_fw_get_evidence(args: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def handle_fw_configure_lab(args: Dict[str, Any]) -> Dict[str, Any]:
+    lab_yaml_path = os.path.join(REPO_ROOT, "lab", "lab.yaml")
+    example_yaml_path = os.path.join(REPO_ROOT, "lab", "lab.example.yaml")
+
+    config: Dict[str, Any] = {}
+    if os.path.exists(lab_yaml_path):
+        try:
+            if yaml:
+                with open(lab_yaml_path, "r", encoding="utf-8") as f:
+                    config = yaml.safe_load(f) or {}
+            else:
+                with open(lab_yaml_path, "r", encoding="utf-8") as f:
+                    config = json.load(f) or {}
+        except Exception:
+            config = {}
+    elif os.path.exists(example_yaml_path) and yaml:
+        try:
+            with open(example_yaml_path, "r", encoding="utf-8") as f:
+                config = yaml.safe_load(f) or {}
+        except Exception:
+            config = {}
+
+    if "project" not in config:
+        config["project"] = {}
+    if "dut" not in config:
+        config["dut"] = {"uart": {}}
+    if "hardware" not in config:
+        config["hardware"] = {}
+
+    updated = []
+
+    if "project_name" in args and args["project_name"] is not None:
+        config["project"]["name"] = args["project_name"]
+        updated.append("project.name")
+
+    if "build_backend" in args and args["build_backend"] is not None:
+        config["project"]["build_backend"] = args["build_backend"]
+        updated.append("project.build_backend")
+
+    if "source_dir" in args and args["source_dir"] is not None:
+        config["project"]["source_dir"] = args["source_dir"]
+        updated.append("project.source_dir")
+
+    if "target_chip" in args and args["target_chip"] is not None:
+        config["project"]["target_chip"] = args["target_chip"]
+        config["dut"]["expected_target"] = args["target_chip"]
+        updated.append("project.target_chip")
+
+    if "uart_port" in args and args["uart_port"] is not None:
+        if "uart" not in config["dut"]:
+            config["dut"]["uart"] = {}
+        config["dut"]["uart"]["port"] = args["uart_port"]
+        updated.append("dut.uart.port")
+
+    if "uart_baudrate" in args and args["uart_baudrate"] is not None:
+        if "uart" not in config["dut"]:
+            config["dut"]["uart"] = {}
+        config["dut"]["uart"]["baudrate"] = int(args["uart_baudrate"])
+        updated.append("dut.uart.baudrate")
+
+    if "debugger_backend" in args and args["debugger_backend"] is not None:
+        config["hardware"]["debugger_backend"] = args["debugger_backend"]
+        updated.append("hardware.debugger_backend")
+
+    if "debugger_probe_id" in args and args["debugger_probe_id"] is not None:
+        config["hardware"]["probe_id"] = args["debugger_probe_id"]
+        updated.append("hardware.probe_id")
+
+    os.makedirs(os.path.dirname(lab_yaml_path), exist_ok=True)
+    if yaml:
+        with open(lab_yaml_path, "w", encoding="utf-8") as f:
+            yaml.dump(config, f, allow_unicode=True, default_flow_style=False)
+    else:
+        with open(lab_yaml_path, "w", encoding="utf-8") as f:
+            json.dump(config, f, ensure_ascii=False, indent=2)
+
+    return {
+        "ok": True,
+        "message": f"Successfully updated lab/lab.yaml ({len(updated)} fields modified)",
+        "updated_fields": updated,
+        "config_file": lab_yaml_path,
+        "config": config,
+    }
+
+
+def handle_fw_scan_hardware(args: Dict[str, Any]) -> Dict[str, Any]:
+    probes = []
+    com_ports = []
+    messages = []
+
+    # 1. Probe detection via pyocd
+    if os.path.exists(PYOCD_EXE):
+        res = run_process([PYOCD_EXE, "list"], timeout=15)
+        raw_output = res.get("stdout", "")
+        if "No available debug probes" not in raw_output:
+            for line in raw_output.splitlines():
+                if line.strip() and not line.startswith("#") and not line.startswith("usage"):
+                    probes.append({"raw": line.strip(), "source": "pyocd"})
+
+    # 2. Probe & COM detection via agentic-hil
+    if os.path.exists(AHIL_EXE):
+        # COM Ports
+        com_res = run_process([AHIL_EXE, "com-ports"], timeout=10)
+        if com_res.get("data") and "ports" in com_res["data"]:
+            for p in com_res["data"]["ports"]:
+                com_ports.append(p)
+        elif com_res.get("stdout"):
+            for line in com_res["stdout"].splitlines():
+                if line.strip():
+                    com_ports.append({"raw": line.strip()})
+
+        # Debugger Probes
+        probe_res = run_process([AHIL_EXE, "debugger-probes"], timeout=15)
+        if probe_res.get("stdout") and "No" not in probe_res["stdout"]:
+            messages.append(probe_res["stdout"])
+
+        # Auto adopt if requested
+        if args.get("adopt", False):
+            adopt_res = run_process([AHIL_EXE, "adopt-hardware"], timeout=20)
+            messages.append(f"adopt-hardware: {adopt_res.get('stdout', '')}")
+
+    return {
+        "ok": True,
+        "probes": probes,
+        "probes_count": len(probes),
+        "com_ports": com_ports,
+        "com_ports_count": len(com_ports),
+        "details": messages,
+        "recommendation": (
+            "No physical probes detected. Connect an ST-LINK or J-Link debugger and retry."
+            if len(probes) == 0 else
+            f"Detected {len(probes)} probe(s) and {len(com_ports)} COM port(s)."
+        ),
+    }
+
+
 # ===========================================================================
 # Tool Definitions & Schemas
 # ===========================================================================
@@ -312,15 +493,75 @@ TOOLS_REGISTRY = {
         },
         "handler": handle_fw_doctor,
     },
+    "fw_configure_lab": {
+        "description": "Interactively configure or update project parameters, target chip (e.g. STM32F103C8), build backend (e.g. keil), source directory, COM port, and debugger probe in lab/lab.yaml.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "project_name": {
+                    "type": "string",
+                    "description": "Project identifier name",
+                },
+                "build_backend": {
+                    "type": "string",
+                    "enum": ["keil", "cmake", "make", "iar", "zephyr", "esp-idf", "platformio"],
+                    "description": "Build toolchain backend",
+                },
+                "source_dir": {
+                    "type": "string",
+                    "description": "Source or project directory containing .uvprojx, Makefile, or CMakeLists.txt",
+                },
+                "target_chip": {
+                    "type": "string",
+                    "description": "Target MCU model (e.g. STM32F103C8, STM32F407ZG)",
+                },
+                "debugger_backend": {
+                    "type": "string",
+                    "enum": ["stlink", "jlink", "pyocd", "openocd", "daplink"],
+                    "description": "Hardware debugger probe backend",
+                },
+                "debugger_probe_id": {
+                    "type": "string",
+                    "description": "Serial number or ID of the hardware probe",
+                },
+                "uart_port": {
+                    "type": "string",
+                    "description": "DUT serial communication COM port (e.g. COM5)",
+                },
+                "uart_baudrate": {
+                    "type": "integer",
+                    "description": "UART baud rate (e.g. 115200)",
+                    "default": 115200,
+                },
+            },
+            "additionalProperties": False,
+        },
+        "handler": handle_fw_configure_lab,
+    },
+    "fw_scan_hardware": {
+        "description": "Scan and identify all attached hardware debuggers (ST-LINK, J-Link, CMSIS-DAP), target MCU identity, and active COM ports.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "adopt": {
+                    "type": "boolean",
+                    "description": "Whether to carry detected hardware parameters into configuration automatically",
+                    "default": False,
+                }
+            },
+            "additionalProperties": False,
+        },
+        "handler": handle_fw_scan_hardware,
+    },
     "fw_build": {
-        "description": "Compile firmware using the repository's build system (CMake, Make, Keil, IAR, PlatformIO, Zephyr, ESP-IDF). Returns structured artifact SHA256 and compiler diagnostics (file, line, col, message).",
+        "description": "Compile firmware using the repository's build system (Keil, CMake, Make, IAR, PlatformIO, Zephyr, ESP-IDF). Returns structured artifact SHA256 and compiler diagnostics (file, line, col, message).",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "backend": {
                     "type": "string",
-                    "enum": ["auto", "cmake", "make", "platformio", "keil", "iar", "zephyr", "esp-idf"],
-                    "description": "Build system backend (defaults to auto detection)",
+                    "enum": ["auto", "keil", "cmake", "make", "platformio", "iar", "zephyr", "esp-idf"],
+                    "description": "Build system backend (defaults to auto detection or lab.yaml)",
                     "default": "auto",
                 },
                 "configuration": {
@@ -347,6 +588,47 @@ TOOLS_REGISTRY = {
             "additionalProperties": False,
         },
         "handler": handle_fw_build,
+    },
+    "fw_flash": {
+        "description": "Flash compiled firmware image (.elf / .hex / .bin / .axf) into target MCU via ST-LINK, J-Link, pyOCD, or simulator.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "backend": {
+                    "type": "string",
+                    "enum": ["simulator", "agentic-hil", "openocd", "stm32cubeprogrammer", "jlink"],
+                    "description": "Flashing backend driver",
+                    "default": "simulator",
+                },
+                "artifact_path": {
+                    "type": "string",
+                    "description": "Relative or absolute path to the binary artifact to flash",
+                    "default": "artifacts/build/firmware.elf",
+                },
+            },
+            "additionalProperties": False,
+        },
+        "handler": handle_fw_flash,
+    },
+    "fw_reset": {
+        "description": "Reset physical or simulated target MCU via debug probe or hardware reset line.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "backend": {
+                    "type": "string",
+                    "enum": ["simulator", "agentic-hil", "openocd"],
+                    "description": "Reset backend driver",
+                    "default": "simulator",
+                },
+                "expected_target": {
+                    "type": "string",
+                    "description": "Expected MCU identity to verify before issuing reset",
+                },
+            },
+            "additionalProperties": False,
+        },
+        "handler": handle_fw_reset,
     },
     "fw_run_hil_test": {
         "description": "Execute pytest hardware-in-the-loop (HIL) automated test suite (boot, UART, protocol, power, signal, logic analyzer). Returns structured JUnit & evidence.",
@@ -440,15 +722,15 @@ TOOLS_REGISTRY = {
         "handler": handle_fw_measure,
     },
     "fw_logic_capture": {
-        "description": "Capture digital protocol waveforms (SPI / UART / I2C) via Saleae / sigrok or deterministic simulator.",
+        "description": "Capture digital protocol waveforms (I2C, SPI, UART) via Saleae / sigrok or deterministic simulator.",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "protocol": {
                     "type": "string",
-                    "enum": ["spi", "uart", "i2c"],
-                    "description": "Target communication protocol",
-                    "default": "spi",
+                    "enum": ["i2c", "spi", "uart"],
+                    "description": "Target communication protocol (e.g. i2c, spi, uart)",
+                    "default": "i2c",
                 },
                 "sample_rate": {
                     "type": "integer",
@@ -470,7 +752,7 @@ TOOLS_REGISTRY = {
         "handler": handle_fw_logic_capture,
     },
     "fw_logic_decode": {
-        "description": "Decode captured digital waveforms into protocol packets/frames and verify assertions.",
+        "description": "Decode captured digital waveforms into protocol packets/frames (I2C address/ACK, SPI bytes, UART data) and verify assertions.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -480,14 +762,14 @@ TOOLS_REGISTRY = {
                 },
                 "protocol": {
                     "type": "string",
-                    "enum": ["spi", "uart", "i2c"],
+                    "enum": ["i2c", "spi", "uart"],
                     "description": "Protocol decoder",
-                    "default": "spi",
+                    "default": "i2c",
                 },
                 "frequency_hz": {
                     "type": "integer",
                     "description": "Clock frequency for decoding (Hz)",
-                    "default": 1000000,
+                    "default": 400000,
                 },
             },
             "additionalProperties": False,
@@ -545,7 +827,7 @@ def process_request(req: Dict[str, Any]) -> Optional[Dict[str, Any]]:
                 },
                 "serverInfo": {
                     "name": "firmwareloop",
-                    "version": "0.0.3"
+                    "version": "0.0.4"
                 }
             }
         }

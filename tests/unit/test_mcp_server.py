@@ -1,5 +1,5 @@
 """
-test_mcp_server.py - Unit tests for FirmwareLoop Workflow MCP Server (v0.0.3).
+test_mcp_server.py - Unit tests for FirmwareLoop Workflow MCP Server (v0.0.4).
 """
 
 import json
@@ -28,7 +28,7 @@ def test_mcp_initialize():
     assert res is not None
     assert res["id"] == 1
     assert res["result"]["serverInfo"]["name"] == "firmwareloop"
-    assert res["result"]["serverInfo"]["version"] == "0.0.3"
+    assert res["result"]["serverInfo"]["version"] == "0.0.4"
     assert "tools" in res["result"]["capabilities"]
 
 
@@ -47,7 +47,11 @@ def test_mcp_tools_list():
 
     expected_tools = [
         "fw_doctor",
+        "fw_configure_lab",
+        "fw_scan_hardware",
         "fw_build",
+        "fw_flash",
+        "fw_reset",
         "fw_run_hil_test",
         "fw_acceptance_scenario",
         "fw_measure",
@@ -124,3 +128,89 @@ def test_mcp_call_fw_build_dry_run():
     assert data.get("ok") is True
     assert data.get("dry_run") is True
     assert "command" in data
+
+
+def test_mcp_call_fw_configure_lab():
+    req = {
+        "jsonrpc": "2.0",
+        "id": 6,
+        "method": "tools/call",
+        "params": {
+            "name": "fw_configure_lab",
+            "arguments": {
+                "project_name": "Test_STM32_Project",
+                "build_backend": "keil",
+                "target_chip": "STM32F103C8",
+                "uart_port": "COM5",
+                "uart_baudrate": 115200
+            }
+        }
+    }
+    res = fw_mcp_server.process_request(req)
+    assert res is not None
+    assert "result" in res
+    content = res["result"]["content"]
+    data = json.loads(content[0]["text"])
+    assert data.get("ok") is True
+    assert "project.build_backend" in data.get("updated_fields", [])
+    assert data.get("config", {}).get("project", {}).get("build_backend") == "keil"
+    assert data.get("config", {}).get("project", {}).get("target_chip") == "STM32F103C8"
+
+
+def test_mcp_call_fw_scan_hardware():
+    req = {
+        "jsonrpc": "2.0",
+        "id": 7,
+        "method": "tools/call",
+        "params": {
+            "name": "fw_scan_hardware",
+            "arguments": {
+                "adopt": False
+            }
+        }
+    }
+    res = fw_mcp_server.process_request(req)
+    assert res is not None
+    assert "result" in res
+    content = res["result"]["content"]
+    data = json.loads(content[0]["text"])
+    assert data.get("ok") is True
+    assert "probes" in data
+    assert "com_ports" in data
+
+
+def test_mcp_call_fw_flash_and_reset_simulator():
+    # Flash
+    flash_req = {
+        "jsonrpc": "2.0",
+        "id": 8,
+        "method": "tools/call",
+        "params": {
+            "name": "fw_flash",
+            "arguments": {
+                "backend": "simulator",
+                "artifact_path": "artifacts/build/firmware.elf"
+            }
+        }
+    }
+    flash_res = fw_mcp_server.process_request(flash_req)
+    assert flash_res is not None
+    flash_data = json.loads(flash_res["result"]["content"][0]["text"])
+    assert flash_data.get("ok") is True
+
+    # Reset
+    reset_req = {
+        "jsonrpc": "2.0",
+        "id": 9,
+        "method": "tools/call",
+        "params": {
+            "name": "fw_reset",
+            "arguments": {
+                "backend": "simulator"
+            }
+        }
+    }
+    reset_res = fw_mcp_server.process_request(reset_req)
+    assert reset_res is not None
+    reset_data = json.loads(reset_res["result"]["content"][0]["text"])
+    assert reset_data.get("ok") is True
