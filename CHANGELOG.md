@@ -3,6 +3,20 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/) 与
 [Semantic Versioning](https://semver.org/)。版本记录按日期倒序。
 
+## [0.0.6] - 2026-08-18
+
+v0.0.6 目标：新增 `firmwareloop update` 一键终端更新命令与 CLI 调度器。
+
+### Added
+
+- **CLI 命令行调度器**：
+  - `firmwareloop update`：终端一键拉取最新代码并热重载依赖与 entrypoints
+  - `firmwareloop doctor`：直接在终端输出环境健康诊断
+  - `firmwareloop setup`：输出或生成各大 Agent 的 MCP 注册指引
+  - `firmwareloop version` / `--version`：查看当前版本号
+  - `firmwareloop help`：查看 CLI 帮助信息
+- **单元测试**：新增 CLI 命令测试用例，全量 29 项测试通过
+
 ## [0.0.5] - 2026-08-18
 
 v0.0.5 目标：标准 Python 包打包与 CLI 入口点注册，支持 uvx 免克隆即时运行。

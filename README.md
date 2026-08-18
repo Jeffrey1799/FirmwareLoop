@@ -84,30 +84,54 @@ uart.log / measurements.json / final-report.json）。
 ## 双层 MCP 架构与接入模式
 
 FirmwareLoop 提供开箱即用的**双层 MCP 架构**：
-1. **上层工作流 MCP (`firmwareloop`)**：面向工程构建（Keil/CMake/Make 等 7 大后端）、pytest 12项自动化 HIL 测试、安全测量与全链路验收。
+1. **上层工作流 MCP (`fwloop` / `firmwareloop`)**：面向工程构建（Keil/CMake/Make 等 7 大后端）、pytest 12项自动化 HIL 测试、安全测量与全链路验收。
 2. **下层硬件驱动 MCP (`agentic-hil`)**：面向物理探针（ST-LINK / J-Link）、JTAG/SWD 固件刷写、芯片复位、串口会话与符号级断点调试。
 
 ---
 
-### 接入模式一：免克隆即时运行（推荐，需安装 `uv`）
+### 接入模式一：电脑全局安装（首选推荐，一次安装，所有工程通用）
 
-无需手动 `git clone`，在任意电脑、任意单片机工程目录下，直接配置 Agent 通过 `uvx` 即时运行：
+用户只需在终端执行以下命令，即可将 `fwloop` 与 `agentic-hil` 安装为系统全局工具：
+
+```bash
+# 1. 全局安装 CLI 工具到系统
+uv tool install git+https://github.com/Jeffrey1799/FirmwareLoop.git
+uv tool install agentic-hil
+
+# 2. 全局注册到各大 Agent（一次配置，所有单片机项目直接使用）
+# Claude Code CLI (全局级):
+claude mcp add --scope user fwloop -- fwloop
+claude mcp add --scope user agentic-hil -- agentic-hil mcp-stdio
+
+# Qoder IDE 接入（支持以下两种官方方式）：
+#   方式 A (GUI): 按快捷键 Ctrl+Shift+,（Mac: Cmd+Shift+,）-> 进入「MCP」->「我的服务」-> 点击「+ 添加」粘贴配置
+#   方式 B (工作区): 项目根目录放 .mcp.json，Qoder 会自动发现并加载
+#   方式 C (CLI): qoder.cmd mcp add --global fwloop -- fwloop
+```
+
+> **效果**：在电脑任意目录、任意 STM32 / Keil 独立工程下打开 Agent，Agent 均可直接调起 MCP，无需在每个工程中重复配置！
+
+---
+
+### 接入模式二：免克隆即时运行（零安装，按需从 GitHub 拉取）
+
+如果不想全局安装，可直接配置 Agent 通过 `uvx` 临时拉取运行：
 
 * **Claude Code CLI 注册**：
   ```bash
-  claude mcp add firmwareloop -- uvx --from git+https://github.com/Jeffrey1799/FirmwareLoop.git firmwareloop
+  claude mcp add fwloop -- uvx --from git+https://github.com/Jeffrey1799/FirmwareLoop.git fwloop
   claude mcp add agentic-hil -- uvx agentic-hil mcp-stdio
   ```
 
-* **Qoder IDE / Cursor / Antigravity（项目 `.mcp.json` 配置）**：
+* **Qoder / Cursor / Antigravity（在工程 `.mcp.json` 中配置）**：
   ```json
   {
     "mcpServers": {
-      "firmwareloop": {
+      "fwloop": {
         "command": "uvx",
         "args": [
           "--from", "git+https://github.com/Jeffrey1799/FirmwareLoop.git",
-          "firmwareloop"
+          "fwloop"
         ]
       },
       "agentic-hil": {
@@ -120,29 +144,43 @@ FirmwareLoop 提供开箱即用的**双层 MCP 架构**：
 
 ---
 
-### 接入模式二：本地全局共享模式（克隆一次，离线可用）
+### 接入模式三：源码二次开发模式（本地 Git 克隆）
 
-1. **克隆与环境初始化**：
-   ```powershell
-   git clone https://github.com/Jeffrey1799/FirmwareLoop.git D:\Tools\FirmwareLoop
-   cd D:\Tools\FirmwareLoop
-   uv pip install -e .
-   ```
-2. **全局注册到各大 Agent**：
-   * **Claude Code CLI**：
-     ```bash
-     claude mcp add firmwareloop -- "D:\Tools\FirmwareLoop\.venv\Scripts\firmwareloop.exe"
-     claude mcp add agentic-hil -- "D:\Tools\FirmwareLoop\.venv\Scripts\agentic-hil.exe" mcp-stdio
-     ```
-   * **Qoder IDE**：
-     ```bash
-     qoder.cmd mcp add firmwareloop -- "D:\Tools\FirmwareLoop\.venv\Scripts\firmwareloop.exe"
-     qoder.cmd mcp add agentic-hil -- "D:\Tools\FirmwareLoop\.venv\Scripts\agentic-hil.exe" mcp-stdio
-     ```
+适合需要修改 FirmwareLoop 源码或离线开发的用户：
+```powershell
+# 1. 克隆与环境初始化
+git clone https://github.com/Jeffrey1799/FirmwareLoop.git D:\Tools\FirmwareLoop
+cd D:\Tools\FirmwareLoop
+uv pip install -e .
+
+# 2. 注册到 Claude Code
+claude mcp add fwloop -- "D:\Tools\FirmwareLoop\.venv\Scripts\fwloop.exe"
+claude mcp add agentic-hil -- "D:\Tools\FirmwareLoop\.venv\Scripts\agentic-hil.exe" mcp-stdio
+```
 
 ---
 
-### 3. 在任意工程中纯对话开发
+### 3. 常用 CLI 终端命令与一键更新（支持简短别名 `fwloop`）
+
+本项目支持名称兼容，**`fwloop` 与 `firmwareloop` 完全等价**，用户与开发者可在终端直接使用更简短的 `fwloop`：
+
+```bash
+# 一键自动更新至最新版本（自动拉取最新代码并热重载依赖）
+fwloop update         # 或: firmwareloop update
+
+# 环境健康体检与依赖诊断
+fwloop doctor         # 或: firmwareloop doctor
+
+# 查看或生成各大 Agent MCP 注册指令
+fwloop setup          # 或: firmwareloop setup
+
+# 查看当前版本
+fwloop version        # 或: firmwareloop version
+```
+
+---
+
+### 4. 在任意工程中纯对话开发
 在你的任意单片机工程目录下启动 Agent，直接通过自然语言交互：
 * “*帮我将当前工程设为 Keil5 编译，目标芯片是 STM32F103C8T6，串口为 COM5*” → Agent 自动调用 `fw_configure_lab`
 * “*扫描已连接的 ST-LINK / J-Link 调试器*” → Agent 自动调用 `fw_scan_hardware`
@@ -159,20 +197,21 @@ FirmwareLoop 提供开箱即用的**双层 MCP 架构**：
 ├── demo-firmware/    示例固件（CMake；宿主编译模拟 MCU，闭环验证载体）
 ├── demo-make/        示例固件（Make；构建测试载体）
 ├── docs/             DEPENDENCY_MATRIX / REUSE_PLAN / V0.0.2_GAP_VERIFICATION
-├── pyproject.toml    标准 Python 包配置与 CLI 入口声明 (v0.0.5)
+├── pyproject.toml    标准 Python 包配置与 CLI 入口声明 (v0.0.6)
 ├── .mcp.example.json 双层 MCP 配置模板（firmwareloop + agentic-hil）
 ├── CLAUDE.md         Claude Code CLI 指南
 └── AI_DEV_GUIDE.md   AGENT 强制规则
 ```
 
-## 能力验证状态（v0.0.5）
+## 能力验证状态（v0.0.6）
 
 > 状态定义：`Implemented`（已实现）/ `Simulator Validated`（模拟验证）/
 > `Real Hardware Validated`（真机验证）/ `Experimental` / `Not Implemented`
 
 | 能力 | 状态 |
 |---|---|
-| 双层 MCP 服务（12 个工作流与硬件工具） | ✅ Implemented + Protocol Validated（28/28 测试通过） |
+| 双层 MCP 服务（12 个工作流与硬件工具） | ✅ Implemented + Protocol Validated（29/29 测试通过） |
+| 一键终端更新（firmwareloop update） | ✅ Implemented + Auto-updater Validated |
 | uvx 免克隆即时运行（Zero-Clone Mode） | ✅ Implemented + PEP 517/621 Validated |
 | Build：keil (UV4.exe) / cmake / make / platformio / iar / zephyr / esp-idf | ✅ Implemented + Multi-backend Validated |
 | pytest HIL（12 项，simulator） | ✅ Implemented + Simulator Validated |

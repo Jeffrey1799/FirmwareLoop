@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-fw_mcp_server.py - FirmwareLoop High-Level Workflow & Device MCP Server (v0.0.5).
+fw_mcp_server.py - FirmwareLoop High-Level Workflow & Device MCP Server (v0.0.6).
 
 Exposes high-level firmware engineering and hardware management tools to AI Coding
 Agents (Antigravity CLI, Claude Code CLI, Qoder IDE, Cursor) via the Model Context
@@ -827,7 +827,7 @@ def process_request(req: Dict[str, Any]) -> Optional[Dict[str, Any]]:
                 },
                 "serverInfo": {
                     "name": "firmwareloop",
-                    "version": "0.0.5"
+                    "version": "0.0.6"
                 }
             }
         }
@@ -916,8 +916,118 @@ def process_request(req: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     return None
 
 
+def handle_cli_update() -> int:
+    """Handle `firmwareloop update` command."""
+    print("============================================================")
+    print("  FirmwareLoop Auto-Updater (v0.0.6)")
+    print("============================================================")
+
+    is_git_repo = os.path.exists(os.path.join(REPO_ROOT, ".git"))
+    if is_git_repo:
+        print(f"[*] Local Git repository detected at: {REPO_ROOT}")
+        print("[*] Pulling latest updates from GitHub remote...")
+        try:
+            res_pull = subprocess.run(["git", "pull"], cwd=REPO_ROOT, text=True, capture_output=True)
+            print(res_pull.stdout.strip() if res_pull.stdout else "")
+            if res_pull.returncode != 0:
+                print(f"[-] Git pull failed: {res_pull.stderr.strip()}")
+                return 1
+            print("[+] Git pull completed successfully.")
+        except Exception as e:
+            print(f"[-] Error executing git pull: {e}")
+            return 1
+
+        print("[*] Reinstalling & updating package dependencies...")
+        uv_path = shutil.which("uv")
+        if uv_path:
+            cmd = [uv_path, "pip", "install", "-e", "."]
+        else:
+            cmd = [sys.executable, "-m", "pip", "install", "-e", "."]
+
+        try:
+            res_install = subprocess.run(cmd, cwd=REPO_ROOT, text=True, capture_output=True)
+            if res_install.returncode == 0:
+                print("[+] Dependencies and CLI entrypoints updated successfully.")
+            else:
+                print(f"[-] Dependency update warning: {res_install.stderr.strip()}")
+        except Exception as e:
+            print(f"[-] Error installing dependencies: {e}")
+
+        print("============================================================")
+        print("[+] FirmwareLoop is now up to date!")
+        print("============================================================")
+        return 0
+    else:
+        print("[*] Global / uv-managed installation detected.")
+        uv_path = shutil.which("uv")
+        if uv_path:
+            print("[*] Refreshing uv cache for firmwareloop...")
+            try:
+                subprocess.run([uv_path, "cache", "clean", "firmwareloop"], capture_output=True)
+                print("[+] uv cache refreshed! The next run will automatically fetch the latest release from GitHub.")
+                return 0
+            except Exception as e:
+                print(f"[-] Error refreshing uv cache: {e}")
+                return 1
+        else:
+            print("[*] Upgrading via pip...")
+            res = subprocess.run([sys.executable, "-m", "pip", "install", "--upgrade", "firmwareloop"])
+            return res.returncode
+
+
+def handle_cli_doctor() -> int:
+    """Handle `firmwareloop doctor` command."""
+    print("[*] Running FirmwareLoop environment diagnostics...")
+    cmd = [PWSH_EXE, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", os.path.join(REPO_ROOT, "tools", "doctor.ps1")]
+    res = subprocess.run(cmd, cwd=REPO_ROOT)
+    return res.returncode
+
+
+def handle_cli_setup() -> int:
+    """Handle `firmwareloop setup` command."""
+    cmd = [PWSH_EXE, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", os.path.join(REPO_ROOT, "tools", "setup-agent-mcp.ps1")]
+    res = subprocess.run(cmd, cwd=REPO_ROOT)
+    return res.returncode
+
+
+def print_cli_help() -> None:
+    print("""FirmwareLoop (fwloop) — AI Agent Firmware Engineering & Lab Automation Platform (v0.0.6)
+
+Usage:
+  fwloop [command]   (or: firmwareloop [command])
+
+Commands:
+  update            Check and update FirmwareLoop to the latest version
+  doctor            Run environment & toolchain diagnostics
+  setup             Print or generate AI Agent MCP registration commands
+  version, -v       Show current version
+  help, -h          Show this help message
+
+Default behavior (no arguments):
+  Starts the Model Context Protocol (MCP) JSON-RPC 2.0 stdio server.
+""")
+
+
 def main() -> None:
-    # Set stdin/stdout to utf-8 unbuffered
+    args = sys.argv[1:]
+    if args:
+        cmd = args[0].lower().strip()
+        if cmd in ["update", "upgrade"]:
+            sys.exit(handle_cli_update())
+        elif cmd in ["doctor", "check"]:
+            sys.exit(handle_cli_doctor())
+        elif cmd in ["setup", "register"]:
+            sys.exit(handle_cli_setup())
+        elif cmd in ["version", "-v", "--version"]:
+            print("FirmwareLoop v0.0.6")
+            sys.exit(0)
+        elif cmd in ["help", "-h", "--help"]:
+            print_cli_help()
+            sys.exit(0)
+        elif cmd in ["mcp", "mcp-stdio", "stdio"]:
+            pass  # Fall through to stdio server loop
+
+    # MCP stdio JSON-RPC loop
     if sys.platform == "win32":
         import msvcrt
         msvcrt.setmode(sys.stdin.fileno(), os.O_BINARY)
@@ -949,3 +1059,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+

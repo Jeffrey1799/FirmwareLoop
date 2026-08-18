@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Dual-Tier MCP setup and registration helper (v0.0.5).
+    Dual-Tier MCP setup and registration helper (v0.0.6).
     Inspects installed AI coding agents (Qoder, Claude Code, Antigravity, Cursor)
     and prints/generates exact registration commands and workspace configuration.
 
@@ -109,18 +109,21 @@ if ($Json) {
     Write-FwJson ([pscustomobject]$report)
 } else {
     Write-Host "============================================================" -ForegroundColor Cyan
-    Write-Host "FirmwareLoop v0.0.5 - Dual-Tier MCP Setup Helper" -ForegroundColor Green
+    Write-Host "FirmwareLoop v0.0.6 - Dual-Tier MCP Setup Helper" -ForegroundColor Green
     Write-Host "============================================================" -ForegroundColor Cyan
     Write-Host ""
     Write-Host "[1] Claude Code CLI Registration:" -ForegroundColor Yellow
     Write-Host "    $($report.agents.claude_code.registration_commands[0])"
     Write-Host "    $($report.agents.claude_code.registration_commands[1])"
     Write-Host ""
-    Write-Host "[2] Qoder IDE Registration:" -ForegroundColor Yellow
-    Write-Host "    $($report.agents.qoder.registration_commands[0])"
-    Write-Host "    $($report.agents.qoder.registration_commands[1])"
+    Write-Host "[2] Qoder IDE (Official GUI & Workspace .mcp.json):" -ForegroundColor Yellow
+    Write-Host "    - GUI: Press 'Ctrl + Shift + ,' -> MCP -> My Services -> '+ Add', paste the JSON config"
+    Write-Host "    - Workspace: Qoder automatically detects '.mcp.json' in your workspace root"
+    Write-Host "    - CLI: $($report.agents.qoder.registration_commands[0])"
+    Write-Host "           $($report.agents.qoder.registration_commands[1])"
     Write-Host ""
-    Write-Host "[3] Antigravity / Workspace .mcp.json:" -ForegroundColor Yellow
-    Write-Host "    Run: .\tools\setup-agent-mcp.ps1 -WriteWorkspaceMcp"
+    Write-Host "[3] Antigravity CLI / Cursor / VS Code:" -ForegroundColor Yellow
+    Write-Host "    - Automatically reads '.mcp.json' in workspace root"
+    Write-Host "    - Generate workspace config: .\tools\setup-agent-mcp.ps1 -WriteWorkspaceMcp"
     Write-Host ""
 }

@@ -1,5 +1,5 @@
 """
-test_mcp_server.py - Unit tests for FirmwareLoop Workflow MCP Server (v0.0.5).
+test_mcp_server.py - Unit tests for FirmwareLoop Workflow MCP Server (v0.0.6).
 """
 
 import json
@@ -28,7 +28,7 @@ def test_mcp_initialize():
     assert res is not None
     assert res["id"] == 1
     assert res["result"]["serverInfo"]["name"] == "firmwareloop"
-    assert res["result"]["serverInfo"]["version"] == "0.0.5"
+    assert res["result"]["serverInfo"]["version"] == "0.0.6"
     assert "tools" in res["result"]["capabilities"]
 
 
@@ -214,3 +214,13 @@ def test_mcp_call_fw_flash_and_reset_simulator():
     assert reset_res is not None
     reset_data = json.loads(reset_res["result"]["content"][0]["text"])
     assert reset_data.get("ok") is True
+
+
+def test_cli_help_and_version(capsys):
+    fw_mcp_server.print_cli_help()
+    captured = capsys.readouterr()
+    assert "FirmwareLoop" in captured.out
+    assert "fwloop" in captured.out
+    assert "update" in captured.out
+    assert "doctor" in captured.out
+

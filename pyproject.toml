@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "firmwareloop"
-version = "0.0.5"
+version = "0.0.6"
 description = "AI Agent Firmware Development and Lab Automation Platform (Dual-Tier MCP Server)"
 readme = "README.md"
 authors = [
@@ -38,7 +38,9 @@ Repository = "https://github.com/Jeffrey1799/FirmwareLoop.git"
 
 [project.scripts]
 firmwareloop = "tools.fw_mcp_server:main"
+fwloop = "tools.fw_mcp_server:main"
 fw-mcp = "tools.fw_mcp_server:main"
+fw = "tools.fw_mcp_server:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
