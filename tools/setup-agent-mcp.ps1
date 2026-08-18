@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Dual-Tier MCP setup and registration helper (v0.0.7).
+    Dual-Tier MCP setup and registration helper (v0.0.8).
     Inspects installed AI coding agents (Qoder, Claude Code, Antigravity, Cursor)
     and prints/generates exact registration commands and workspace configuration.
 
@@ -76,9 +76,24 @@ $report.agents.qoder = [ordered]@{
 }
 
 # 3. Antigravity CLI / Gemini Code
+$antigravitySkillsRoot = Join-Path $env:USERPROFILE '.gemini\antigravity-cli\skills'
+$targetGlobalSkillDir = Join-Path $antigravitySkillsRoot 'firmwareloop'
+$sourceSkill = Join-Path $repoRoot 'skills\firmwareloop\SKILL.md'
+
+$skillInstalled = $false
+if (Test-Path -LiteralPath (Split-Path $antigravitySkillsRoot)) {
+    if (Test-Path -LiteralPath $sourceSkill) {
+        New-Item -ItemType Directory -Force -Path $targetGlobalSkillDir | Out-Null
+        Copy-Item -LiteralPath $sourceSkill -Destination (Join-Path $targetGlobalSkillDir 'SKILL.md') -Force
+        $skillInstalled = $true
+    }
+}
+
 $report.agents.antigravity = [ordered]@{
     mcp_config_path = (Join-Path $repoRoot '.mcp.json')
-    note = "Antigravity automatically discovers project-level .mcp.json in workspace root."
+    global_skill_installed = $skillInstalled
+    global_skill_path = if ($skillInstalled) { Join-Path $targetGlobalSkillDir 'SKILL.md' } else { $null }
+    note = "Antigravity automatically discovers project-level .mcp.json and global skills."
 }
 
 # Optional: write project-level .mcp.json
@@ -109,7 +124,7 @@ if ($Json) {
     Write-FwJson ([pscustomobject]$report)
 } else {
     Write-Host "============================================================" -ForegroundColor Cyan
-    Write-Host "FirmwareLoop v0.0.7 - Dual-Tier MCP Setup Helper" -ForegroundColor Green
+    Write-Host "FirmwareLoop v0.0.8 - Dual-Tier MCP & Skill Setup Helper" -ForegroundColor Green
     Write-Host "============================================================" -ForegroundColor Cyan
     Write-Host ""
     Write-Host "[1] Claude Code CLI Registration:" -ForegroundColor Yellow
@@ -123,7 +138,10 @@ if ($Json) {
     Write-Host "           $($report.agents.qoder.registration_commands[1])"
     Write-Host ""
     Write-Host "[3] Antigravity CLI / Cursor / VS Code:" -ForegroundColor Yellow
-    Write-Host "    - Automatically reads '.mcp.json' in workspace root"
+    Write-Host "    - MCP: Automatically reads '.mcp.json' in workspace root"
+    if ($skillInstalled) {
+        Write-Host "    - Global Skill: [OK] Successfully registered to: $targetGlobalSkillDir\SKILL.md" -ForegroundColor Green
+    }
     Write-Host "    - Generate workspace config: .\tools\setup-agent-mcp.ps1 -WriteWorkspaceMcp"
     Write-Host ""
 }

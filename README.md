@@ -1,17 +1,52 @@
-# FirmwareLoop
+# FirmwareLoop (`fwloop`)
 
-> 面向 AI Agent 的固件开发与实验室自动化平台（开源版）。
-> 目标不是"AI 帮工程师写代码"，而是**让 AI 基于真实硬件产生的观测数据参与开发、调试、测试与回归验证**。
+> **面向 AI Agent 的嵌入式固件开发、硬件在环测试（HIL）与实验室自动化 MCP 工具集。**
+> 赋能 Claude Code、Qoder、Antigravity、Cursor 等 AI 智能体直接操作物理硬件，打通从代码编译、探针烧录、芯片复位到串口交互、逻辑分析仪抓包与示波器测量的完整开发闭环。
 
 ![Windows](https://img.shields.io/badge/windows-10%20%7C%2011-blue)
 ![PowerShell](https://img.shields.io/badge/powershell-7+-4E8B8B)
 ![Python](https://img.shields.io/badge/python-3.10%2B-3776AB)
+[![PyPI](https://img.shields.io/pypi/v/firmwareloop.svg)](https://pypi.org/project/firmwareloop/)
 [![CI](https://github.com/Jeffrey1799/FirmwareLoop/actions/workflows/ci.yml/badge.svg)](https://github.com/Jeffrey1799/FirmwareLoop/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-FirmwareLoop 把固件工程的完整闭环交给 AI Agent 编排：**理解工程 → 修改 → 编译 → 烧录 → 复位 → UART/CAN/Debug → 逻辑分析仪/示波器测量 → 自动测试 → PASS/FAIL → 失败分析 → 再修改 → 重新验证**。
+---
 
-核心原则：**优先复用现成开源/官方能力，不构建大而全的自研 Firmware Lab MCP**。所有工具是薄适配层，任何环节失败都返回结构化 JSON + 统一 Error Class（`BUILD_ERROR` / `SAFETY_LIMIT` / `TARGET_MISMATCH` …），证据自动落盘——判定功能正确必须同时有 **Build Evidence + Runtime Evidence + Measurement Evidence + Assertion**，禁止只看 `exit code == 0`。
+## 为什么需要 FirmwareLoop？（定位与作用）
+
+传统的 AI 编程助手（LLM）通常只能停留在**“纯软件文本生成”**阶段。在单片机与嵌入式领域，AI 面临严重的断层：**看不到编译报错行列、无法操作物理烧录器、读取不到串口输出，更无法测量真实的电信号与总线波形**。
+
+**FirmwareLoop 作为一个标准的 Model Context Protocol (MCP) 服务器，充当了 AI Agent 与物理硬件之间的桥梁**：
+* **赋予 AI 动手能力**：让 Agent 自主调用 Keil5 / CMake 编译固件，并通过 ST-LINK / J-Link / DAPLink 烧录到目标 MCU 并硬件复位。
+* **赋予 AI 观测能力**：让 Agent 能够监听 UART 串口会话、捕获并解码 I2C/SPI 总线数据，甚至读取示波器与程控电源的真实物理量。
+* **软硬件自动排障闭环**：当硬件运行异常时，Agent 基于捕获到的真实证据（编译器诊断、I2C NACK、串口 Panic、示波器异常电压）自动定位并修改 C/C++ 源码，重新烧录验证，直到测试全绿。
+
+---
+
+## 核心功能与 MCP 工具矩阵
+
+FirmwareLoop 为 AI Agent 暴露了开箱即用的 MCP 工具，涵盖 5 大核心领域：
+
+| 领域 | 核心 MCP 工具 | 功能说明 |
+|---|---|---|
+| **构建与体检** | `fw_doctor` <br> `fw_build` | 环境工具链诊断；自动调度 Keil MDK 5 (`UV4.exe`)、CMake、Make、PlatformIO 等编译固件并提取精确定位到行列的诊断日志。 |
+| **硬件与探针** | `fw_scan_hardware` <br> `fw_flash` <br> `fw_reset` | 自动扫描连接的 ST-LINK / J-Link / DAPLink 探针与串口；直连 SWD 接口执行固件烧录与芯片硬件复位。 |
+| **总线与协议** | `fw_logic_capture` <br> `fw_logic_decode` | 驱动逻辑分析仪（Saleae / Sigrok）捕获数字信号；自动解码并断言 I2C 地址/ACK、SPI 帧与串口数据完整性。 |
+| **测试与测量** | `fw_run_hil_test` <br> `fw_measure` <br> `fw_acceptance_scenario` | 一键运行 12 项 pytest 自动化硬件在环测试；安全读取 PyVISA 示波器（频率/Vpp）与程控电源（电流/电压）。 |
+| **工程与脚手架** | `fw_init_project` <br> `fw_configure_lab` <br> `fw_get_evidence` | 一键生成 `AGENTS.md` / `CLAUDE.md` / `GEMINI.md` 多 Agent 指南；自然语言修改芯片型号与台架配置；提取全链路审计证据。 |
+
+---
+
+## 核心设计原则
+
+1. **真实硬件优先与零伪造原则（Real-Hardware-First & Zero-Fake）**：
+   开发过程中，若探针未插、MCU 未上电、COM 串口占用或编译器缺失，系统**严格抛出明确异常（Fail-Closed）并输出可操作的排查与安装指引**，绝不伪造假成功数据。
+2. **安全沙盒保护（Safety Gate）**：
+   所有物理仪器写操作强制受 [`lab/limits.yaml`](lab/limits.example.yaml) 限制，永久禁止超压超流与擦除安全密钥。
+3. **全电脑全局通用（Zero Config per Project）**：
+   通过 `uv tool install firmwareloop` 全局安装一次，所有 STM32 / Keil 项目均可直接由 Agent 唤起使用。
+
+---
 
 ## 架构
 
@@ -39,38 +74,158 @@ FirmwareLoop 把固件工程的完整闭环交给 AI Agent 编排：**理解工�
 
 细节见 [AI_DEV_GUIDE.md](AI_DEV_GUIDE.md)（Agent 强制规则，设计约束由此衍生；原始内部需求文档不随仓库发布）。
 
+---
+
+## 双层 MCP 架构与接入模式
+
+FirmwareLoop 提供开箱即用的**双层 MCP 架构**：
+1. **上层工作流 MCP (`fwloop` / `firmwareloop`)**：面向工程构建（Keil/CMake/Make 等 7 大后端）、pytest 12项自动化 HIL 测试、安全测量与全链路验收。
+2. **下层硬件驱动 MCP (`agentic-hil`)**：面向物理探针（ST-LINK / J-Link）、JTAG/SWD 固件刷写、芯片复位、串口会话与符号级断点调试。
+
+### 接入模式一：电脑全局安装（首选推荐，一次安装，所有工程通用）
+
+1. 全局安装 CLI 工具到系统（直接从 PyPI 官方源下载）：
+```bash
+uv tool install firmwareloop
+uv tool install agentic-hil
+```
+
+2. 全局注册到 Claude Code CLI（全局级，一次配置全电脑工程通用）：
+```bash
+claude mcp add --scope user fwloop -- fwloop
+claude mcp add --scope user agentic-hil -- agentic-hil mcp-stdio
+```
+
+3. 注册到 Qoder IDE（支持以下三种方式）：
+- **GUI 方式**：按快捷键 `Ctrl + Shift + ,`（Mac: `Cmd + Shift + ,`）进入「MCP」->「我的服务」-> 点击「+ 添加」粘贴配置。
+- **工作区方式**：项目根目录放置 `.mcp.json`，Qoder 会自动发现并加载。
+- **CLI 方式**：
+```bash
+qoder.cmd mcp add --global fwloop -- fwloop
+```
+
+> **效果**：在电脑任意目录、任意 STM32 / Keil 独立工程下打开 Agent，Agent 均可直接调起 MCP，无需在每个工程中重复配置。
+
+---
+
+### 接入模式二：免克隆即时运行（零安装，按需从 PyPI 即拉即用）
+
+如果不想全局安装，可直接配置 Agent 通过 `uvx` 临时拉取运行：
+
+1. Claude Code CLI 注册：
+```bash
+claude mcp add fwloop -- uvx firmwareloop
+claude mcp add agentic-hil -- uvx agentic-hil mcp-stdio
+```
+
+2. Qoder / Cursor / Antigravity（在工程 `.mcp.json` 中配置）：
+```json
+{
+  "mcpServers": {
+    "fwloop": {
+      "command": "uvx",
+      "args": ["firmwareloop"]
+    },
+    "agentic-hil": {
+      "command": "uvx",
+      "args": ["agentic-hil", "mcp-stdio"]
+    }
+  }
+}
+```
+
+---
+
+### 接入模式三：源码二次开发模式（本地 Git 克隆）
+
+适合需要修改 FirmwareLoop 源码或离线开发的用户：
+
+1. 克隆与环境初始化：
+```powershell
+git clone https://github.com/Jeffrey1799/FirmwareLoop.git D:\Tools\FirmwareLoop
+cd D:\Tools\FirmwareLoop
+uv pip install -e .
+```
+
+2. 注册到 Claude Code：
+```bash
+claude mcp add fwloop -- "D:\Tools\FirmwareLoop\.venv\Scripts\fwloop.exe"
+claude mcp add agentic-hil -- "D:\Tools\FirmwareLoop\.venv\Scripts\agentic-hil.exe" mcp-stdio
+```
+
+---
+
+### 常用 CLI 终端命令
+
+本项目支持名称兼容，`fwloop` 与 `firmwareloop` 完全等价：
+
+1. 在任意单片机工程根目录下一键初始化多 Agent 规范（AGENTS.md, CLAUDE.md, GEMINI.md）与台架配置：
+```bash
+fwloop init
+```
+
+2. 自动检查并更新至最新版本（自动拉取最新代码并热重载依赖）：
+```bash
+fwloop update
+```
+
+3. 环境健康体检与依赖诊断：
+```bash
+fwloop doctor
+```
+
+4. 查看或生成各大 Agent MCP 注册指令：
+```bash
+fwloop setup
+```
+
+5. 查看当前版本：
+```bash
+fwloop version
+```
+
+---
+
+### 卸载与清理
+
+如果需要从系统中卸载 FirmwareLoop：
+
+1. 一键卸载全局 CLI 工具（干净彻底，不残留垃圾文件）：
+```bash
+uv tool uninstall firmwareloop
+uv tool uninstall agentic-hil
+```
+
+2. 从 Claude Code 中移除全局 MCP 注册：
+```bash
+claude mcp remove --scope user fwloop
+claude mcp remove --scope user agentic-hil
+```
+
+---
+
+### 在任意工程中纯对话开发
+
+在你的任意单片机工程目录下启动 Agent，直接通过自然语言交互：
+* “*帮我将当前单片机工程初始化为 FirmwareLoop 项目*” → Agent 自动调用 `fw_init_project` 生成 `AGENTS.md`、`CLAUDE.md`、`GEMINI.md` 与 `lab/lab.yaml`
+* “*帮我将当前工程设为 Keil5 编译，目标芯片是 STM32F103C8T6，串口为 COM5*” → Agent 自动调用 `fw_configure_lab`
+* “*扫描已连接的 ST-LINK / J-Link 调试器*” → Agent 自动调用 `fw_scan_hardware`
+* “*编译当前 Keil 工程并刷入板子，复位后读取串口输出*” → Agent 自动闭环调用 `fw_build`、`fw_flash`、`fw_reset`
+
+---
+
 ## 特性
 
-- **Build 适配**：自动探测 CMake / Make / Keil / IAR / PlatformIO 等已有构建系统，只做包装不重造；输出结构化 `firmware-build-result/v1`（含 file/line/col 诊断）
+- **多 Agent 规范体系**：自动生成 `AGENTS.md`、`CLAUDE.md`、`GEMINI.md` 与 `skills/firmwareloop/SKILL.md`，支持主流 Agent 无缝协同
+- **Build 适配**：自动探测 Keil (UV4.exe) / CMake / Make / IAR / PlatformIO 等已有构建系统，只做包装不重造；输出结构化 `firmware-build-result/v1`（含 file/line/col 诊断）
 - **pytest HIL**：12 项开箱测试（boot / UART / 协议 / 电源 / PWM / 逻辑分析），无硬件自动 skip，产物 JUnit + `firmware-hil-result/v1` + evidence
-- **逻辑分析**：`capture → decode → assert` 全链路（SPI / UART / I2C），Saleae MCP 或 sigrok fallback
+- **逻辑分析**：`capture → decode → assert` 全链路（I2C / SPI / UART），Saleae MCP 或 sigrok fallback
 - **仪器层**：PyVISA/SCPI，每一次写入都受 `lab/limits.yaml` 安全限制保护，超限返回 `SAFETY_LIMIT`（`raw_scpi` 刻意未实现）
 - **硬件门（Agentic HIL）**：probe → 身份校验 → 动作；目标不符立即 STOP；CAN TX 默认需人工授权；Mass Erase / OTP / RDP 等永久禁止
 - **仿真模式**：无硬件也能完整验收——模拟 DUT 是真实编译产物（stdio 即 UART），仪器/逻辑分析有确定性 simulator 后端
 - **审计闭环**：每次运行保存 run_id / git commit / modified files / artifact sha256 / uart.log / measurements / 报告
 
-## 快速开始（Windows 10/11 + PowerShell 7 + Python 3.10+）
-
-```powershell
-# 1. 环境体检（JSON）
-.\tools\doctor.ps1 -Json
-
-# 2. 构建示例固件（CMake + Ninja + MinGW，-Clean 强制全量重编）
-.\tools\build.ps1 -Configuration Debug -Clean -Json
-
-# 3. HIL 测试（默认 simulator：用刚编译的固件产物体模拟 DUT）
-.\tools\test.ps1 -Json
-
-# 4. 仪器测量（可离线；写操作受 limits.yaml 保护）
-.\.venv\Scripts\python.exe .\tools\instrument_cli.py scope measure-frequency --instrument scope1
-
-# 5. 一键最终验收场景（Spec §33：build→flash→reset→UART→logic→scope→pytest→报告）
-.\tools\acceptance-scenario.ps1 -Json
-```
-
-预期：doctor `ok:true`；build 产出 `artifacts/build/firmware.{elf,map,bin}`；
-test **12/12 PASS** 并生成 `artifacts/runs/<run_id>/`（summary.json / pytest.xml /
-uart.log / measurements.json / final-report.json）。
+---
 
 ## 与同类项目定位
 
@@ -79,112 +234,9 @@ uart.log / measurements.json / final-report.json）。
 | 编排主体 | AI Agent | pytest | pytest | 资源调度 |
 | 测量证据 | 逻辑分析 + VISA 仪器 | 串口/日志 | 基础 | 弱 |
 | 安全策略 | limits.yaml + 权限模型 | 无 | 无 | 弱 |
-| 迭代闭环 | build→测→改→重测（≤3 次） | 无 | 部分 | 无 |
-
-## 双层 MCP 架构与接入模式
-
-FirmwareLoop 提供开箱即用的**双层 MCP 架构**：
-1. **上层工作流 MCP (`fwloop` / `firmwareloop`)**：面向工程构建（Keil/CMake/Make 等 7 大后端）、pytest 12项自动化 HIL 测试、安全测量与全链路验收。
-2. **下层硬件驱动 MCP (`agentic-hil`)**：面向物理探针（ST-LINK / J-Link）、JTAG/SWD 固件刷写、芯片复位、串口会话与符号级断点调试。
+| 迭代闭环 | build→测→改→重测（<=3 次） | 无 | 部分 | 无 |
 
 ---
-
-### 接入模式一：电脑全局安装（首选推荐，一次安装，所有工程通用）
-
-用户只需在终端执行以下命令，即可将 `fwloop` 与 `agentic-hil` 安装为系统全局工具：
-
-```bash
-# 1. 全局安装 CLI 工具到系统
-uv tool install git+https://github.com/Jeffrey1799/FirmwareLoop.git
-uv tool install agentic-hil
-
-# 2. 全局注册到各大 Agent（一次配置，所有单片机项目直接使用）
-# Claude Code CLI (全局级):
-claude mcp add --scope user fwloop -- fwloop
-claude mcp add --scope user agentic-hil -- agentic-hil mcp-stdio
-
-# Qoder IDE 接入（支持以下两种官方方式）：
-#   方式 A (GUI): 按快捷键 Ctrl+Shift+,（Mac: Cmd+Shift+,）-> 进入「MCP」->「我的服务」-> 点击「+ 添加」粘贴配置
-#   方式 B (工作区): 项目根目录放 .mcp.json，Qoder 会自动发现并加载
-#   方式 C (CLI): qoder.cmd mcp add --global fwloop -- fwloop
-```
-
-> **效果**：在电脑任意目录、任意 STM32 / Keil 独立工程下打开 Agent，Agent 均可直接调起 MCP，无需在每个工程中重复配置！
-
----
-
-### 接入模式二：免克隆即时运行（零安装，按需从 GitHub 拉取）
-
-如果不想全局安装，可直接配置 Agent 通过 `uvx` 临时拉取运行：
-
-* **Claude Code CLI 注册**：
-  ```bash
-  claude mcp add fwloop -- uvx --from git+https://github.com/Jeffrey1799/FirmwareLoop.git fwloop
-  claude mcp add agentic-hil -- uvx agentic-hil mcp-stdio
-  ```
-
-* **Qoder / Cursor / Antigravity（在工程 `.mcp.json` 中配置）**：
-  ```json
-  {
-    "mcpServers": {
-      "fwloop": {
-        "command": "uvx",
-        "args": [
-          "--from", "git+https://github.com/Jeffrey1799/FirmwareLoop.git",
-          "fwloop"
-        ]
-      },
-      "agentic-hil": {
-        "command": "uvx",
-        "args": ["agentic-hil", "mcp-stdio"]
-      }
-    }
-  }
-  ```
-
----
-
-### 接入模式三：源码二次开发模式（本地 Git 克隆）
-
-适合需要修改 FirmwareLoop 源码或离线开发的用户：
-```powershell
-# 1. 克隆与环境初始化
-git clone https://github.com/Jeffrey1799/FirmwareLoop.git D:\Tools\FirmwareLoop
-cd D:\Tools\FirmwareLoop
-uv pip install -e .
-
-# 2. 注册到 Claude Code
-claude mcp add fwloop -- "D:\Tools\FirmwareLoop\.venv\Scripts\fwloop.exe"
-claude mcp add agentic-hil -- "D:\Tools\FirmwareLoop\.venv\Scripts\agentic-hil.exe" mcp-stdio
-```
-
----
-
-### 3. 常用 CLI 终端命令与一键更新（支持简短别名 `fwloop`）
-
-本项目支持名称兼容，**`fwloop` 与 `firmwareloop` 完全等价**，用户与开发者可在终端直接使用更简短的 `fwloop`：
-
-```bash
-# 一键自动更新至最新版本（自动拉取最新代码并热重载依赖）
-fwloop update         # 或: firmwareloop update
-
-# 环境健康体检与依赖诊断
-fwloop doctor         # 或: firmwareloop doctor
-
-# 查看或生成各大 Agent MCP 注册指令
-fwloop setup          # 或: firmwareloop setup
-
-# 查看当前版本
-fwloop version        # 或: firmwareloop version
-```
-
----
-
-### 4. 在任意工程中纯对话开发
-在你的任意单片机工程目录下启动 Agent，直接通过自然语言交互：
-* “*帮我将当前工程设为 Keil5 编译，目标芯片是 STM32F103C8T6，串口为 COM5*” → Agent 自动调用 `fw_configure_lab`
-* “*扫描已连接的 ST-LINK / J-Link 调试器*” → Agent 自动调用 `fw_scan_hardware`
-* “*编译当前 Keil 工程并刷入板子，复位后读取串口输出*” → Agent 自动闭环调用 `fw_build`、`fw_flash`、`fw_reset`
 
 ## 目录结构
 
@@ -197,38 +249,37 @@ fwloop version        # 或: firmwareloop version
 ├── demo-firmware/    示例固件（CMake；宿主编译模拟 MCU，闭环验证载体）
 ├── demo-make/        示例固件（Make；构建测试载体）
 ├── docs/             DEPENDENCY_MATRIX / REUSE_PLAN / V0.0.2_GAP_VERIFICATION
-├── pyproject.toml    标准 Python 包配置与 CLI 入口声明 (v0.0.7)
+├── pyproject.toml    标准 Python 包配置与 CLI 入口声明 (v0.0.8)
 ├── .mcp.example.json 双层 MCP 配置模板（firmwareloop + agentic-hil）
+├── AGENTS.md         通用智能体规范（Antigravity / Qoder / Cursor 等）
 ├── CLAUDE.md         Claude Code CLI 指南
+├── GEMINI.md         Antigravity / Gemini CLI 指南
 └── AI_DEV_GUIDE.md   AGENT 强制规则
 ```
 
-## 能力验证状态（v0.0.7）
+---
+
+## 能力验证状态（v0.0.8）
 
 > 状态定义：`Implemented`（已实现）/ `Simulator Validated`（模拟验证）/
 > `Real Hardware Validated`（真机验证）/ `Experimental` / `Not Implemented`
 
 | 能力 | 状态 |
 |---|---|
-| 双层 MCP 服务（12 个工作流与硬件工具） | ✅ Implemented + Protocol Validated（29/29 测试通过） |
-| 一键终端更新（firmwareloop update） | ✅ Implemented + Auto-updater Validated |
-| uvx 免克隆即时运行（Zero-Clone Mode） | ✅ Implemented + PEP 517/621 Validated |
-| Build：keil (UV4.exe) / cmake / make / platformio / iar / zephyr / esp-idf | ✅ Implemented + Multi-backend Validated |
-| pytest HIL（12 项，simulator） | ✅ Implemented + Simulator Validated |
-| pytest HIL（real UART） | ⚠️ Implemented（Agentic HIL 插件已就绪）→ Real Hardware Validated 待 DUT |
-| Agentic HIL MCP（42 硬件工具） | ✅ Implemented + discovery 验证 → 真机待 DUT |
-| 逻辑分析 capture/decode/assert（I2C/SPI/UART） | ✅ Simulator Validated → Real Hardware Validated 待 LA |
-| VISA 仪器（simulator） | ✅ Simulator Validated → Real Hardware Validated 待仪器 |
-| Safety Policy（limits.yaml） | ✅ Implemented（simulator 校验）→ 外置权威配置 |
-| 自动修复闭环（M6 载体） | ✅ Simulator Validated → Real Hardware Validated 待 DUT |
+| 双层 MCP 服务（13 个工作流与硬件工具） | Implemented + Protocol Validated（31/31 测试通过） |
+| 一键多 Agent 脚手架（fwloop init / fw_init_project） | Implemented + Multi-Agent Validated |
+| 一键终端更新（fwloop update） | Implemented + Auto-updater Validated |
+| uvx 免克隆即时运行（Zero-Clone Mode） | Implemented + PEP 517/621 Validated |
+| Build：keil (UV4.exe) / cmake / make / platformio / iar / zephyr / esp-idf | Implemented + Multi-backend Validated |
+| pytest HIL（12 项，simulator） | Implemented + Simulator Validated |
+| pytest HIL（real UART） | Implemented（Agentic HIL 插件已就绪）-> Real Hardware Validated 待 DUT |
+| Agentic HIL MCP（42 硬件工具） | Implemented + discovery 验证 -> 真机待 DUT |
+| 逻辑分析 capture/decode/assert（I2C/SPI/UART） | Simulator Validated -> Real Hardware Validated 待 LA |
+| VISA 仪器（simulator） | Simulator Validated -> Real Hardware Validated 待仪器 |
+| Safety Policy（limits.yaml） | Implemented（simulator 校验）-> 外置权威配置 |
+| 自动修复闭环（M6 载体） | Simulator Validated -> Real Hardware Validated 待 DUT |
 
-## 里程碑状态
-
-| 里程碑 | 状态 |
-|---|---|
-| M0 Doctor / M1 Build / M3 pytest HIL / M4 Logic / M5 Instruments | ✅ 已达成（含 CI 无硬件绿） |
-| M2 真实 DUT | 🟡 环境就绪（Agentic HIL 已集成，42 MCP 工具已 discovery），接真实硬件后验收 |
-| M6 自动修复闭环 | ✅ 仿真链路验证（缺陷注入 → 观测捕获 → 结构化失败报告） |
+---
 
 ## 接入真实硬件
 
@@ -237,9 +288,13 @@ fwloop version        # 或: firmwareloop version
 3. `.\tools\doctor.ps1 -Json` 复核
 4. `probe_target` 确认目标身份后，`.\tools\acceptance-scenario.ps1 -Hardware agentic-hil -Json`
 
+---
+
 ## 贡献
 
 见 [CONTRIBUTING.md](CONTRIBUTING.md)。版本记录见 [CHANGELOG.md](CHANGELOG.md)，安全相关见 [SECURITY.md](SECURITY.md)。
+
+---
 
 ## License
 

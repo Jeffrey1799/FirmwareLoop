@@ -3,6 +3,22 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/) 与
 [Semantic Versioning](https://semver.org/)。版本记录按日期倒序。
 
+## [0.0.8] - 2026-08-18
+
+v0.0.8 目标：新增多智能体项目脚手架 `fwloop init` 与跨 Agent 规范体系（AGENTS.md、CLAUDE.md、GEMINI.md）。
+
+### Added
+
+- **多 Agent 项目脚手架（Multi-Agent Scaffolding）**：
+  - 新增 `fwloop init` CLI 指令与 `fw_init_project` MCP 工具，支持一键在任意工程下自动初始化通用智能体规则、台架配置与 MCP 描述
+- **跨平台智能体规范体系**：
+  - 生成 `AGENTS.md`（通用智能体规范）
+  - 生成 `CLAUDE.md`（Claude Code CLI 规范）
+  - 生成 `GEMINI.md`（Antigravity 规范）
+  - 生成 `lab/lab.yaml` 台架配置与 `.mcp.json` 双层配置模板
+- **单元测试扩充**：
+  - 新增 `fw_init_project` 与 CLI `init` 单元测试，全量 31 项测试全部通过
+
 ## [0.0.7] - 2026-08-18
 
 v0.0.7 目标：落实 Real-Hardware-First 与 Zero-Fake 真实开发铁律，全面升级 pyOCD / J-Link 物理探针直连驱动与严格异常阻断。

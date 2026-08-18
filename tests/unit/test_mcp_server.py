@@ -1,5 +1,5 @@
 """
-test_mcp_server.py - Unit tests for FirmwareLoop Workflow MCP Server (v0.0.7).
+test_mcp_server.py - Unit tests for FirmwareLoop Workflow MCP Server (v0.0.8).
 """
 
 import json
@@ -28,7 +28,7 @@ def test_mcp_initialize():
     assert res is not None
     assert res["id"] == 1
     assert res["result"]["serverInfo"]["name"] == "firmwareloop"
-    assert res["result"]["serverInfo"]["version"] == "0.0.7"
+    assert res["result"]["serverInfo"]["version"] == "0.0.8"
     assert "tools" in res["result"]["capabilities"]
 
 
@@ -58,6 +58,7 @@ def test_mcp_tools_list():
         "fw_logic_capture",
         "fw_logic_decode",
         "fw_get_evidence",
+        "fw_init_project",
     ]
     for exp in expected_tools:
         assert exp in tool_names, f"Expected tool {exp} in tools/list"
@@ -221,6 +222,61 @@ def test_cli_help_and_version(capsys):
     captured = capsys.readouterr()
     assert "FirmwareLoop" in captured.out
     assert "fwloop" in captured.out
+    assert "init" in captured.out
     assert "update" in captured.out
     assert "doctor" in captured.out
+
+
+def test_mcp_call_fw_init_project(tmp_path):
+    target_dir = str(tmp_path / "my_stm32_project")
+    req = {
+        "jsonrpc": "2.0",
+        "id": 10,
+        "method": "tools/call",
+        "params": {
+            "name": "fw_init_project",
+            "arguments": {
+                "target_dir": target_dir,
+                "target_chip": "STM32F407ZG",
+                "build_backend": "keil"
+            }
+        }
+    }
+    res = fw_mcp_server.process_request(req)
+    assert res is not None
+    assert "result" in res
+    content = res["result"]["content"]
+    data = json.loads(content[0]["text"])
+    assert data.get("ok") is True
+    assert "AGENTS.md" in data.get("created_files", [])
+    assert "CLAUDE.md" in data.get("created_files", [])
+    assert "GEMINI.md" in data.get("created_files", [])
+    assert "lab/lab.yaml" in data.get("created_files", [])
+    assert ".mcp.json" in data.get("created_files", [])
+    assert "skills/firmwareloop/SKILL.md" in data.get("created_files", [])
+
+    # Verify physical file existence and contents
+    assert os.path.exists(os.path.join(target_dir, "AGENTS.md"))
+    assert os.path.exists(os.path.join(target_dir, "CLAUDE.md"))
+    assert os.path.exists(os.path.join(target_dir, "GEMINI.md"))
+    assert os.path.exists(os.path.join(target_dir, "lab", "lab.yaml"))
+    assert os.path.exists(os.path.join(target_dir, ".mcp.json"))
+    assert os.path.exists(os.path.join(target_dir, "skills", "firmwareloop", "SKILL.md"))
+
+    with open(os.path.join(target_dir, "lab", "lab.yaml"), encoding="utf-8") as f:
+        lab_content = f.read()
+        assert "STM32F407ZG" in lab_content
+        assert "keil" in lab_content
+
+
+def test_cli_init(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    exit_code = fw_mcp_server.handle_cli_init()
+    assert exit_code == 0
+    captured = capsys.readouterr()
+    assert "Multi-Agent Project Initializer" in captured.out
+    assert os.path.exists(tmp_path / "AGENTS.md")
+    assert os.path.exists(tmp_path / "CLAUDE.md")
+    assert os.path.exists(tmp_path / "GEMINI.md")
+
 

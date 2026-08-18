@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "firmwareloop"
-version = "0.0.7"
+version = "0.0.8"
 description = "AI Agent Firmware Development and Lab Automation Platform (Dual-Tier MCP Server)"
 readme = "README.md"
 authors = [
@@ -45,3 +45,6 @@ fw = "tools.fw_mcp_server:main"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["tools*"]
+
+[tool.setuptools.package-data]
+"*" = ["*.ps1", "*.psm1", "*.yaml", "*.md", "*.json"]

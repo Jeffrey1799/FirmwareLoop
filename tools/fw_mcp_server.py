@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-fw_mcp_server.py - FirmwareLoop High-Level Workflow & Device MCP Server (v0.0.7).
+fw_mcp_server.py - FirmwareLoop High-Level Workflow & Device MCP Server (v0.0.8).
 
 Exposes high-level firmware engineering and hardware management tools to AI Coding
 Agents (Antigravity CLI, Claude Code CLI, Qoder IDE, Cursor) via the Model Context
@@ -298,18 +298,15 @@ def handle_fw_get_evidence(args: Dict[str, Any]) -> Dict[str, Any]:
         entries = [os.path.join(runs_dir, d) for d in os.listdir(runs_dir) if os.path.isdir(os.path.join(runs_dir, d))]
         if not entries:
             return {"ok": False, "error_class": "ARTIFACT_NOT_FOUND", "message": "No runs found in artifacts/runs"}
-        entries.sort(key=lambda x: os.path.getmtime(x), reverse=True)
-        target_dir = entries[0]
-        run_id = os.path.basename(target_dir)
+        target_dir = max(entries, key=os.path.getmtime)
     else:
-        target_dir = os.path.join(runs_dir, run_id)
-
-    if not os.path.exists(target_dir):
-        return {"ok": False, "error_class": "ARTIFACT_NOT_FOUND", "message": f"Run {run_id} not found"}
+        candidate = os.path.join(runs_dir, run_id)
+        if os.path.exists(candidate):
+            target_dir = candidate
+        else:
+            return {"ok": False, "error_class": "ARTIFACT_NOT_FOUND", "message": f"Run '{run_id}' not found"}
 
     summary_file = os.path.join(target_dir, "summary.json")
-    report_file = os.path.join(target_dir, "final-report.json")
-
     summary_data = None
     if os.path.exists(summary_file):
         try:
@@ -318,6 +315,7 @@ def handle_fw_get_evidence(args: Dict[str, Any]) -> Dict[str, Any]:
         except Exception:
             pass
 
+    report_file = os.path.join(target_dir, "final-report.json")
     report_data = None
     if os.path.exists(report_file):
         try:
@@ -329,11 +327,166 @@ def handle_fw_get_evidence(args: Dict[str, Any]) -> Dict[str, Any]:
     files = os.listdir(target_dir)
     return {
         "ok": True,
-        "run_id": run_id,
+        "run_id": os.path.basename(target_dir),
         "directory": target_dir,
         "files": files,
         "summary": summary_data,
         "final_report": report_data,
+    }
+
+
+def handle_fw_init_project(args: Dict[str, Any]) -> Dict[str, Any]:
+    """Scaffold multi-agent instruction files (AGENTS.md, CLAUDE.md, GEMINI.md), lab.yaml, and .mcp.json."""
+    target_dir = args.get("target_dir", ".")
+    target_dir = os.path.abspath(target_dir)
+    os.makedirs(target_dir, exist_ok=True)
+    target_chip = args.get("target_chip", "STM32F103C8")
+    build_backend = args.get("build_backend", "keil")
+    overwrite = args.get("overwrite", False)
+
+    created_files = []
+
+    # 1. AGENTS.md
+    agents_path = os.path.join(target_dir, "AGENTS.md")
+    agents_content = """# AGENTS.md — Firmware Engineering & Lab Automation Guidelines
+
+This repository is configured with **FirmwareLoop (`fwloop`)** for AI Agent-driven firmware development, building, flashing, and hardware-in-the-loop (HIL) testing.
+
+## Dual-Tier MCP Tools Available
+- **Upper-Tier (`fwloop`)**:
+  - `fw_doctor()`: Check compiler, Python, COM ports, and probe connectivity.
+  - `fw_configure_lab(project_name, build_backend, target_chip, uart_port)`: Interactively configure project settings in `lab/lab.yaml`.
+  - `fw_scan_hardware(adopt=false)`: Scan connected ST-LINK / J-Link / CMSIS-DAP probes and COM ports.
+  - `fw_build(backend="auto", configuration="Debug", clean=true)`: Build firmware across Keil5, CMake, Make, IAR, PlatformIO, etc.
+  - `fw_flash(backend="auto", artifact_path)`: Flash compiled firmware image into target MCU via ST-LINK or J-Link.
+  - `fw_reset(backend="auto")`: Hardware/software reset target MCU.
+  - `fw_run_hil_test()`: Run pytest automated hardware-in-the-loop test suite.
+  - `fw_measure(instrument_type, command)`: Safe PyVISA instrument measurement.
+  - `fw_logic_capture(protocol="i2c|spi|uart")` / `fw_logic_decode()`: Logic analyzer protocol capture & decode.
+  - `fw_get_evidence()`: Retrieve audit run artifacts and test evidence.
+  - `fw_init_project()`: Scaffold multi-agent instruction files and lab configurations.
+
+- **Lower-Tier (`agentic-hil`)**:
+  - `probe_target()`, `flash_firmware()`, `reset_target()`, `com_session_*()`, `debug_*()`.
+
+## Core Agent Rules & Principles
+1. **Real-Hardware-First & Zero Fake Results**: Never fake, simulate, or mock results during real firmware development. If toolchains (Keil5/GCC), debug probes (ST-LINK/J-Link), target MCU, or instruments are missing or disconnected, immediately fail closed with explicit error classes (`TOOLCHAIN_NOT_FOUND`, `PROBE_NOT_FOUND`, `TARGET_UNREACHABLE`) and actionable setup guidance for the user. Never claim success on incomplete conditions!
+2. **Evidence-Driven**: Never judge success by `exit code == 0` alone. Inspect Build Evidence + Runtime Evidence + Measurement Evidence + Assertion.
+3. **Safety First**: Never bypass `lab/limits.yaml` safety boundaries.
+4. **Iteration Limit**: Maximum 3 automated fix attempts before requesting human guidance.
+"""
+    if not os.path.exists(agents_path) or overwrite:
+        with open(agents_path, "w", encoding="utf-8") as fh:
+            fh.write(agents_content)
+        created_files.append("AGENTS.md")
+
+    # 2. CLAUDE.md
+    claude_path = os.path.join(target_dir, "CLAUDE.md")
+    claude_content = f"# CLAUDE.md — Claude Code Guidelines\n\n{agents_content}"
+    if not os.path.exists(claude_path) or overwrite:
+        with open(claude_path, "w", encoding="utf-8") as fh:
+            fh.write(claude_content)
+        created_files.append("CLAUDE.md")
+
+    # 3. GEMINI.md
+    gemini_path = os.path.join(target_dir, "GEMINI.md")
+    gemini_content = "# GEMINI.md — Antigravity Agent Guidelines\n\nSee `AGENTS.md` for full project guidelines and Dual-Tier MCP tools.\n"
+    if not os.path.exists(gemini_path) or overwrite:
+        with open(gemini_path, "w", encoding="utf-8") as fh:
+            fh.write(gemini_content)
+        created_files.append("GEMINI.md")
+
+    # 4. lab/lab.yaml
+    lab_dir = os.path.join(target_dir, "lab")
+    os.makedirs(lab_dir, exist_ok=True)
+    lab_yaml_path = os.path.join(lab_dir, "lab.yaml")
+    lab_yaml_content = f"""# FirmwareLoop Project & Hardware Bench Configuration
+schema: "firmwareloop-lab-config/v1"
+
+project:
+  name: "{os.path.basename(target_dir)}"
+  target_chip: "{target_chip}"
+  build_backend: "{build_backend}"
+  source_dir: "."
+
+hardware:
+  debugger_probe: "stlink"
+  probe_serial: "auto"
+  uart:
+    port: "COM3"
+    baudrate: 115200
+  power_supply:
+    default_voltage: 3.3
+"""
+    if not os.path.exists(lab_yaml_path) or overwrite:
+        with open(lab_yaml_path, "w", encoding="utf-8") as fh:
+            fh.write(lab_yaml_content)
+        created_files.append("lab/lab.yaml")
+
+    # 5. .mcp.json
+    mcp_json_path = os.path.join(target_dir, ".mcp.json")
+    mcp_json_content = """{
+  "mcpServers": {
+    "fwloop": {
+      "command": "fwloop"
+    },
+    "agentic-hil": {
+      "command": "agentic-hil",
+      "args": ["mcp-stdio"]
+    }
+  }
+}
+"""
+    if not os.path.exists(mcp_json_path) or overwrite:
+        with open(mcp_json_path, "w", encoding="utf-8") as fh:
+            fh.write(mcp_json_content)
+        created_files.append(".mcp.json")
+
+    # 6. skills/firmwareloop/SKILL.md
+    skill_dir = os.path.join(target_dir, "skills", "firmwareloop")
+    os.makedirs(skill_dir, exist_ok=True)
+    skill_path = os.path.join(skill_dir, "SKILL.md")
+    skill_content = """---
+name: firmwareloop
+description: FirmwareLoop workflow skill for orchestrating firmware builds (Keil/CMake/Make/etc.), probe detection (ST-LINK/J-Link), interactive lab configuration, pytest HIL testing, I2C/SPI logic analyzer captures, PyVISA instrument measurements, and end-to-end hardware acceptance.
+---
+
+# FirmwareLoop Skill
+
+Use this skill when developing, building, testing, or diagnosing embedded firmware within the FirmwareLoop repository.
+
+## Capabilities & Tools
+
+### Upper-Tier MCP Tools (`firmwareloop`)
+- `fw_doctor`: Run environmental health check.
+- `fw_configure_lab`: Interactively configure or update project parameters, target chip (e.g. STM32F103C8), build backend (e.g. keil), source directory, COM port, and debugger probe in `lab/lab.yaml`.
+- `fw_scan_hardware`: Scan and identify attached hardware debuggers (ST-LINK, J-Link, CMSIS-DAP) and COM ports.
+- `fw_build`: Compile firmware across 7 backends (Keil, CMake, Make, IAR, PlatformIO, Zephyr, ESP-IDF).
+- `fw_flash`: Flash compiled firmware image into target MCU.
+- `fw_reset`: Hardware or software reset of the target MCU.
+- `fw_run_hil_test`: Run 12-item pytest HIL automated testing.
+- `fw_acceptance_scenario`: Execute end-to-end acceptance scenario.
+- `fw_measure`: Query PyVISA/SCPI instrument readings (frequency, duty cycle, Vpp, voltage, current).
+- `fw_logic_capture` / `fw_logic_decode`: Digital protocol capture and verification (I2C, SPI, UART).
+- `fw_get_evidence`: Retrieve audit run artifacts and reports.
+- `fw_init_project`: Scaffold multi-agent instruction files and lab configurations.
+
+## Mandatory Rules
+1. **Real-Hardware-First & Zero Fake Data**: Never fake or mock hardware results. When compilers, debuggers, or MCU targets are missing, fail closed immediately and output explicit error diagnostics and user setup guidance.
+2. **Max 3 Code Iterations**: Never loop infinitely fixing code.
+3. **Fail Closed on Safety**: Never bypass `limits.yaml`.
+4. **Verify Evidence**: Ensure all evidence is captured in `artifacts/runs/<run_id>/`.
+"""
+    if not os.path.exists(skill_path) or overwrite:
+        with open(skill_path, "w", encoding="utf-8") as fh:
+            fh.write(skill_content)
+        created_files.append("skills/firmwareloop/SKILL.md")
+
+    return {
+        "ok": True,
+        "target_dir": target_dir,
+        "created_files": created_files,
+        "message": f"Successfully initialized FirmwareLoop multi-agent files in {target_dir}"
     }
 
 
@@ -791,6 +944,37 @@ TOOLS_REGISTRY = {
         },
         "handler": handle_fw_get_evidence,
     },
+    "fw_init_project": {
+        "description": "Scaffold multi-agent instruction files (AGENTS.md, CLAUDE.md, GEMINI.md), lab.yaml bench config, and .mcp.json in the current or specified firmware project directory.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "target_dir": {
+                    "type": "string",
+                    "description": "Directory path of the firmware project to initialize (defaults to current directory '.')",
+                    "default": ".",
+                },
+                "target_chip": {
+                    "type": "string",
+                    "description": "Target MCU chip model (e.g. STM32F103C8, STM32F407ZG)",
+                    "default": "STM32F103C8",
+                },
+                "build_backend": {
+                    "type": "string",
+                    "enum": ["keil", "cmake", "make", "platformio", "iar", "zephyr", "esp-idf"],
+                    "description": "Build system backend",
+                    "default": "keil",
+                },
+                "overwrite": {
+                    "type": "boolean",
+                    "description": "Whether to overwrite existing instruction files if present",
+                    "default": False,
+                },
+            },
+            "additionalProperties": False,
+        },
+        "handler": handle_fw_init_project,
+    },
 }
 
 
@@ -827,7 +1011,7 @@ def process_request(req: Dict[str, Any]) -> Optional[Dict[str, Any]]:
                 },
                 "serverInfo": {
                     "name": "firmwareloop",
-                    "version": "0.0.7"
+                    "version": "0.0.8"
                 }
             }
         }
@@ -919,7 +1103,7 @@ def process_request(req: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 def handle_cli_update() -> int:
     """Handle `firmwareloop update` command."""
     print("============================================================")
-    print("  FirmwareLoop Auto-Updater (v0.0.7)")
+    print("  FirmwareLoop Auto-Updater (v0.0.8)")
     print("============================================================")
 
     is_git_repo = os.path.exists(os.path.join(REPO_ROOT, ".git"))
@@ -990,13 +1174,37 @@ def handle_cli_setup() -> int:
     return res.returncode
 
 
+def handle_cli_init() -> int:
+    """Handle `firmwareloop init` command."""
+    print("============================================================")
+    print("  FirmwareLoop Multi-Agent Project Initializer (v0.0.8)")
+    print("============================================================")
+    cwd = os.getcwd()
+    print(f"[*] Initializing multi-agent guidelines & bench config in:\n    {cwd}\n")
+    res = handle_fw_init_project({"target_dir": cwd, "overwrite": False})
+    if res.get("ok"):
+        for f in res.get("created_files", []):
+            print(f"  [+] Created: {f}")
+        if not res.get("created_files"):
+            print("  [*] All agent instruction files (AGENTS.md, CLAUDE.md, GEMINI.md, lab.yaml, .mcp.json) already exist.")
+        print("")
+        print("============================================================")
+        print("[+] Done! All AI Coding Agents (Claude Code, Qoder, Antigravity, Cursor) are now ready to operate in this repository.")
+        print("============================================================")
+        return 0
+    else:
+        print(f"[-] Initialization failed: {res.get('message')}")
+        return 1
+
+
 def print_cli_help() -> None:
-    print("""FirmwareLoop (fwloop) — AI Agent Firmware Engineering & Lab Automation Platform (v0.0.7)
+    print("""FirmwareLoop (fwloop) — AI Agent Firmware Engineering & Lab Automation Platform (v0.0.8)
 
 Usage:
   fwloop [command]   (or: firmwareloop [command])
 
 Commands:
+  init              Initialize multi-agent rules (AGENTS.md, CLAUDE.md, GEMINI.md) & lab.yaml in current project
   update            Check and update FirmwareLoop to the latest version
   doctor            Run environment & toolchain diagnostics
   setup             Print or generate AI Agent MCP registration commands
@@ -1012,14 +1220,16 @@ def main() -> None:
     args = sys.argv[1:]
     if args:
         cmd = args[0].lower().strip()
-        if cmd in ["update", "upgrade"]:
+        if cmd in ["init", "scaffold"]:
+            sys.exit(handle_cli_init())
+        elif cmd in ["update", "upgrade"]:
             sys.exit(handle_cli_update())
         elif cmd in ["doctor", "check"]:
             sys.exit(handle_cli_doctor())
         elif cmd in ["setup", "register"]:
             sys.exit(handle_cli_setup())
         elif cmd in ["version", "-v", "--version"]:
-            print("FirmwareLoop v0.0.7")
+            print("FirmwareLoop v0.0.8")
             sys.exit(0)
         elif cmd in ["help", "-h", "--help"]:
             print_cli_help()
