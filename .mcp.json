@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "agentic-hil": {
+      "type": "stdio",
+      "command": ".venv\\Scripts\\agentic-hil.exe",
+      "args": [
+        "mcp-stdio"
+      ],
+      "timeout": 120000
+    },
+    "logic2": {
+      "type": "http",
+      "url": "http://127.0.0.1:10530",
+      "enabled": false
+    }
+  }
+}

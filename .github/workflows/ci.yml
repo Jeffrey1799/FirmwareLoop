@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  verify:
+    name: doctor + build + HIL (simulator)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PowerShell
+        uses: actions/setup-powershell@v1
+        with:
+          version: '7.4'
+
+      - name: Install toolchain (cmake, ninja, gcc)
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build gcc
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Create venv and install test deps
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install --quiet pytest pyserial pyvisa pyvisa-py pyyaml
+
+      - name: Doctor
+        run: pwsh -NoProfile -File tools/doctor.ps1 -Json
+
+      - name: Build firmware (clean)
+        run: pwsh -NoProfile -File tools/build.ps1 -Configuration Debug -Clean -Json
+
+      - name: HIL tests (simulator mode, 12 tests)
+        run: pwsh -NoProfile -File tools/test.ps1 -Json
+
+      - name: Final acceptance scenario (simulator)
+        run: pwsh -NoProfile -File tools/acceptance-scenario.ps1 -Json
+
+      - name: Upload run artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hil-artifacts
+          path: |
+            artifacts/runs/*/summary.json
+            artifacts/runs/*/pytest.xml
+            artifacts/runs/*/final-report.json
+          retention-days: 14

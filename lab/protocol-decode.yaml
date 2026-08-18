@@ -1,0 +1,35 @@
+# lab/protocol-decode.yaml - decoder configuration for logic analysis
+# (Spec §13: Saleae MCP or sigrok fallback). Used by tools/logic_decode.ps1
+# and references the textual decoders available in the installed tool.
+# Actual command/schema must be confirmed against the installed tool at setup
+# time (Spec §32: never guess tool parameters from stale docs).
+
+scope: "SPI/UART/I2C decode for HIL evidence"
+
+decoders:
+  spi:
+    protocol: SPI
+    signal: { clk: "D0", mosi: "D1", miso: "D2", cs: "D3" }
+    bit_order: "MSB First"
+    output: "artifacts/captures/spi.json"
+  uart:
+    protocol: UART
+    signal: { tx: "D0", rx: "D1" }
+    baud: 115200
+    bits: 8
+    parity: none
+    stop_bits: 1
+    output: "artifacts/captures/uart.json"
+  i2c:
+    protocol: I2C
+    signal: { scl: "D0", sda: "D1" }
+    address_format: 7bit
+    output: "artifacts/captures/i2c.json"
+
+# sigrok fallback paths (non-Saleae hardware). If sigrok-cli is not installed
+# the capture tool reports logic_capture_error instead of failing silently.
+sigrok:
+  cli: null                 # e.g. "C:\\Program Files\\sigrok\\sigrok-cli.exe"
+  capture_time_s: 2.0
+  samplerate_hz: 4000000
+  channels: 8

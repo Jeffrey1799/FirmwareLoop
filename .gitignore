@@ -1,0 +1,40 @@
+# Open Embedder Alternative v1 - gitignore
+
+# Wrappers / tooling environments
+.venv/
+venv/
+.uv-cache/
+.tmp/
+__pycache__/
+*.pyc
+
+# Build outputs (schemas and logs are produced by tools/; keep the tree clean)
+artifacts/build/*
+artifacts/logs/*
+artifacts/captures/*
+artifacts/measurements/*
+artifacts/test-results/*
+artifacts/runs/*
+!artifacts/build/.gitkeep
+!artifacts/logs/.gitkeep
+!artifacts/captures/.gitkeep
+!artifacts/measurements/.gitkeep
+!artifacts/test-results/.gitkeep
+!artifacts/runs/.gitkeep
+
+# Lab secrets / local overrides (never commit real ports/serials/IPs)
+lab/lab.yaml
+lab/*.local.yaml
+.agentic-hil/
+
+# Editor noise
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Internal requirement document (kept local, not published with the OSS repo)
+Open Embedder Alternative v1 — AI 固件开发与实验室自动化平台 Spec.md
+
+# Local release notes (kept local)
+版本记录.txt

@@ -1,0 +1,46 @@
+# lab/limits.yaml - Hardware Safety Policy (Spec §17)
+#
+# Every instrument WRITE goes through: request -> read limits -> validate ->
+# allowed? NO => SAFETY_LIMIT, YES => execute.
+# The AI agent MUST NOT edit this file to widen limits (Spec §17/§21).
+
+# Power supplies: output voltage/current caps and toggle permission.
+power:
+  psu1:
+    max_voltage_v: 12.0
+    max_current_a: 1.5
+    allow_output_toggle: true
+  psu2:
+    max_voltage_v: 5.0
+    max_current_a: 3.0
+    allow_output_toggle: false   # bench supply: power-on only via physical button
+
+# Signal generators: peak-to-peak and offset bounds, waveform whitelist.
+signal_generator:
+  awg1:
+    max_vpp: 3.3
+    max_offset_v: 1.65
+    allowed_waveforms:
+      - sine
+      - square
+
+# Relay names (fixture channels) the AI may toggle. Unlisted names are denied.
+relay:
+  allowed:
+    - DUT_POWER
+    - SENSOR_OPEN
+
+# Permanently forbidden operations (Spec §2) - informational, enforced by policy:
+#   mass erase, OTP/Fuse/Option-Bytes/RDP/Secure-Boot writes, signing keys,
+#   raw debugger shell, raw SCPI (raw_scpi is not implemented in instrument_cli.py).
+forbidden:
+  - mass_erase
+  - otp_write
+  - fuse_write
+  - option_bytes_write
+  - rdp_set
+  - secure_boot_write
+  - production_lock
+  - signing_key_use
+  - raw_scpi
+  - raw_debugger_shell

@@ -1,0 +1,23 @@
+# test-plans/regression.yaml - full HIL regression plan (Spec §26 M3/M4/M5)
+name: regression
+description: complete HIL regression executed by tools/test.ps1 (pytest)
+pytest:
+  path: tests/hil
+  junit: "{run_dir}/pytest.xml"
+  report: "{run_dir}/summary.json"
+assertions:
+  - test_boot_banner
+  - test_boot_after_reset
+  - test_basic_uart_echo
+  - test_uart_unknown_command_returns_err
+  - test_spi_jedec
+  - test_pwm_frequency
+  - test_pwm_vpp
+  - test_idle_current
+  - test_supply_voltage
+acceptance: all_tests_pass_or_skip
+artifacts:
+  evidence:
+    - artifacts/runs/{run_id}/uart.log
+    - artifacts/runs/{run_id}/measurements.json
+    - artifacts/runs/{run_id}/pytest.xml

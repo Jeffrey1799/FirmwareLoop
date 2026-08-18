@@ -1,0 +1,124 @@
+# lab/lab.example.yaml - lab configuration template (Spec §6/§9/§20/§24/§25)
+#
+# REAL values (COM ports, probe serials, instrument IPs, fixture IDs, secrets)
+# MUST NEVER be committed. Copy this file to lab/lab.yaml (gitignored) and fill
+# in your bench. Everything here is a placeholder; the default mode is the
+# simulator, which exercises the pipeline without silicon.
+#
+#   Copy:  Copy-Item lab\lab.example.yaml lab\lab.yaml
+#   Check: .\tools\doctor.ps1 -Json
+#   Run:   .\tools\test.ps1 -Json
+
+project:
+  name: open-embedder-demo
+  # Build backend hint for tools/build.ps1 auto-detection ("cmake", "keil",
+  # "iar", "zephyr", "esp-idf", "platformio", "make"). Leave empty for auto.
+  build_backend: cmake
+  source_dir: demo-firmware
+
+# Device under test. UART mode: "simulator" (default, runs the compiled
+# artifact as a subprocess) or "serial" (real COM port via pyserial).
+dut:
+  target:
+    # Expected probe identity (Spec §9): when a probe is configured, an
+    # identity mismatch MUST abort immediately with TARGET_MISMATCH.
+    expected_target: null            # e.g. "STM32F401RE" when real silicon
+    probe_serial: null               # e.g. "000123456789"
+  reset:
+    # Command line used by tools/reset.ps1 / Agentic HIL when configured.
+    tool: null                       # "agentic-hil" | "openocd" | vendor CLI
+  uart:
+    mode: simulator                  # "simulator" | "serial"
+    port: COM5                       # only used when mode=serial
+    baud: 115200
+    boot_expect:                     # Spec §11: expect() not sleep()
+      - pattern: "Bootloader"
+        timeout_ms: 2000
+      - pattern: "Application started"
+        timeout_ms: 3000
+
+# Instruments for tools/instrument_cli.py (Spec §14-16). backend=simulator
+# returns modelled values; backend=visa drives PyVISA/SCPI. Override SCPI
+# commands per instrument when your device differs from the default recipes.
+instruments:
+  scope1:
+    type: scope
+    backend: simulator            # switch to "visa" for real hardware
+    resource: "TCPIP::192.168.1.50::INSTR"   # VISA resource string
+    commands:
+      measure_frequency: ":MEASure:FREQuency? {ch}"
+  psu1:
+    type: power_supply
+    backend: simulator            # switch to "visa" for real hardware
+    resource: "USB0::0x1AB1::0x0E11::DP832A0000::INSTR"
+  dmm1:
+    type: dmm
+    backend: simulator
+    resource: "USB0::0x1AB1::0x0E11::DM3058::INSTR"
+  awg1:
+    type: signal_generator
+    backend: simulator
+    resource: "TCPIP::192.168.1.51::INSTR"
+  relay1:
+    type: relay
+    backend: simulator
+    resource: "TCPIP::192.168.1.52::INSTR"
+    relay_channel: 1
+
+# Simulated measurement values used by backend=simulator (dry runs).
+simulated_measurements:
+  scope:
+    frequency: 20000.0     # Hz
+    duty: 50.0             # %
+    vpp: 3.3               # V
+    rms: 1.65              # V
+    rise_time: 0.000000005 # s
+  psu:
+    voltage: 3.3           # V
+    current: 0.035         # A
+    power: 0.1155          # W
+
+# Autonomous repair loop policy (Spec §20). Arms the AI agent with hard stops.
+agent_loop:
+  max_code_iterations: 3
+  max_flash_attempts_per_iteration: 2
+  stop_on_hardware_mismatch: true
+  stop_on_permission_denied: true
+  stop_on_safety_violation: true
+
+# Permission model (Spec §24) - documented defaults; enforcement lives in the
+# tools and the AI_DEV_GUIDE AGENT RULES.
+permissions:
+  auto_allowed:
+    - build
+    - probe
+    - uart_rx
+    - can_rx
+    - read_register
+    - read_memory
+    - logic_capture
+    - scope_measure
+    - psu_measure
+    - pytest
+    - report_read
+  require_confirmation:
+    - flash
+    - reset
+    - uart_tx
+    - can_tx
+    - power_cycle
+    - relay
+    - psu_output
+    - awg_output
+  permanently_forbidden:
+    - mass_erase
+    - otp
+    - fuse
+    - option_bytes
+    - rdp
+    - secure_boot
+    - production_lock
+    - signing_key
+    - raw_debugger
+    - raw_scpi
+    - unbounded_voltage_current

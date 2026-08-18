@@ -1,0 +1,19 @@
+# test-plans/smoke.yaml - minimal post-flash smoke plan (Spec §11/§26 M3)
+name: smoke
+description: boot + uart echo + jedec smoke on the freshly flashed DUT
+steps:
+  - name: reset
+    action: dut.reset
+  - name: boot_banner
+    action: dut.expect
+    args: { pattern: "Application started", timeout_ms: 5000 }
+  - name: uart_echo
+    action: dut.command
+    args: { cmd: "echo smoke-ok", expect: "smoke-ok", timeout_ms: 5000 }
+  - name: spi_jedec
+    action: dut.command
+    args: { cmd: "jedec", expect: "JEDEC EF 40 18", timeout_ms: 5000 }
+artifacts:
+  evidence:
+    - artifacts/runs/{run_id}/uart.log
+    - artifacts/runs/{run_id}/measurements.json
