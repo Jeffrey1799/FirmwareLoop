@@ -76,41 +76,92 @@ FirmwareLoop 为 AI Agent 暴露了开箱即用的 MCP 工具，涵盖 5 大核�
 
 ---
 
-## 双层 MCP 架构与接入模式
+## 极速起步（3 步搞定）
 
-FirmwareLoop 提供开箱即用的**双层 MCP 架构**：
-1. **上层工作流 MCP (`fwloop` / `firmwareloop`)**：面向工程构建（Keil/CMake/Make 等 7 大后端）、pytest 12项自动化 HIL 测试、安全测量与全链路验收。
-2. **下层硬件驱动 MCP (`agentic-hil`)**：面向物理探针（ST-LINK / J-Link）、JTAG/SWD 固件刷写、芯片复位、串口会话与符号级断点调试。
+无论你使用 **Google Antigravity**、**Claude Code**、**Qoder** 还是 **Cursor**，只需以下 3 步即可开始 AI 驱动的单片机自动化开发：
 
-### 接入模式一：电脑全局安装（首选推荐，一次安装，所有工程通用）
+### 第一步：全局安装核心 CLI 工具
 
-1. 全局安装 CLI 工具到系统（直接从 PyPI 官方源下载）：
+从 PyPI 官方源安装（全电脑仅需执行一次）：
+
 ```bash
 uv tool install firmwareloop
 uv tool install agentic-hil
 ```
 
-2. 全局注册到 Claude Code CLI（全局级，一次配置全电脑工程通用）：
+---
+
+### 第二步：全局注册到各大 AI Agent
+
+按你日常使用的 Agent 执行对应的注册命令（全电脑仅需配置一次）：
+
+1. **Google Antigravity / Gemini CLI（全自动配置，推荐）**：
+```bash
+fwloop setup
+```
+> **说明**：该命令会自动将双层 MCP 写入 Antigravity 全局配置（`~/.gemini/config/mcp_config.json`），并全自动将全套技能包同步到全局 Skill 目录。
+
+2. **Claude Code CLI**：
 ```bash
 claude mcp add --scope user fwloop -- fwloop
 claude mcp add --scope user agentic-hil -- agentic-hil mcp-stdio
 ```
 
-3. 注册到 Qoder IDE（支持以下三种方式）：
-- **GUI 方式**：按快捷键 `Ctrl + Shift + ,`（Mac: `Cmd + Shift + ,`）进入「MCP」->「我的服务」-> 点击「+ 添加」粘贴配置。
-- **工作区方式**：项目根目录放置 `.mcp.json`，Qoder 会自动发现并加载。
-- **CLI 方式**：
+3. **Qoder IDE**：
 ```bash
 qoder.cmd mcp add --global fwloop -- fwloop
 ```
 
-> **效果**：在电脑任意目录、任意 STM32 / Keil 独立工程下打开 Agent，Agent 均可直接调起 MCP，无需在每个工程中重复配置。
+4. **Cursor / 其他 IDE**（在工程根目录的 `.mcp.json` 中并联配置）：
+```json
+{
+  "mcpServers": {
+    "fwloop": {
+      "command": "fwloop"
+    },
+    "agentic-hil": {
+      "command": "agentic-hil",
+      "args": ["mcp-stdio"]
+    }
+  }
+}
+```
 
 ---
 
-### 接入模式二：免克隆即时运行（零安装，按需从 PyPI 即拉即用）
+### 第三步：在你的单片机工程中开启自动化
 
-如果不想全局安装，可直接配置 Agent 通过 `uvx` 临时拉取运行：
+进入你的任意单片机工程根目录（如 STM32 Keil / CMake / IAR / PlatformIO 项目）：
+
+1. 一键生成智能体规范、MCP 描述与台架模板：
+```bash
+fwloop init
+```
+
+2. 接入真实硬件（配置串口与探针）：
+根据提示打开工程目录下的 `lab/lab.yaml`，填入你的串口号（如 `COM5`）、目标芯片型号（如 `STM32F103C8`）与编译器类型（如 `keil` 或 `cmake`）。
+
+3. 打开 AI Agent 对话框，直接用自然语言调度：
+- “*执行 `fw_doctor()` 检查我的硬件和编译器连接状态*”
+- “*帮我编译当前单片机代码，并刷入开发板运行*”
+- “*运行 HIL 自动化测试，抓取串口 Log 并验证开机状态*”
+
+---
+
+### 核心命令职责速查
+
+| 命令 | 适用级别 | 核心作用 | 使用时机 |
+|---|---|---|---|
+| **`fwloop setup`** | **系统全局级** | 给各大 Agent（Antigravity / Claude Code）配置全局 MCP 与同步技能包 | **全电脑只需跑 1 次** |
+| **`fwloop init`** | **工程项目级** | 在当前单片机代码目录下生成 `AGENTS.md`、`GEMINI.md`、`CLAUDE.md` 与台架配置 | **每个新单片机项目跑 1 次** |
+| **`fwloop doctor`** | **环境诊断** | 检查编译器（Keil/GCC）、Python 环境、串口与探针连接健康度 | 随时排查环境时使用 |
+| **`fwloop update`** | **自动更新** | 一键自动拉取最新代码并热重载依赖 | 升级工具版本时使用 |
+
+---
+
+### 进阶：免克隆即时运行模式（Zero-Clone Mode）
+
+如果不想使用全局安装，也可配置 Agent 通过 `uvx` 临时拉取即时运行：
 
 1. Claude Code CLI 注册：
 ```bash
@@ -118,7 +169,7 @@ claude mcp add fwloop -- uvx firmwareloop
 claude mcp add agentic-hil -- uvx agentic-hil mcp-stdio
 ```
 
-2. Qoder / Cursor / Antigravity（在工程 `.mcp.json` 中配置）：
+2. 工程 `.mcp.json` 配置：
 ```json
 {
   "mcpServers": {
@@ -249,7 +300,7 @@ claude mcp remove --scope user agentic-hil
 ├── demo-firmware/    示例固件（CMake；宿主编译模拟 MCU，闭环验证载体）
 ├── demo-make/        示例固件（Make；构建测试载体）
 ├── docs/             DEPENDENCY_MATRIX / REUSE_PLAN / V0.0.2_GAP_VERIFICATION
-├── pyproject.toml    标准 Python 包配置与 CLI 入口声明 (v0.0.9)
+├── pyproject.toml    标准 Python 包配置与 CLI 入口声明 (v0.0.10)
 ├── .mcp.example.json 双层 MCP 配置模板（firmwareloop + agentic-hil）
 ├── AGENTS.md         通用智能体规范（Antigravity / Qoder / Cursor 等）
 ├── CLAUDE.md         Claude Code CLI 指南
@@ -259,7 +310,7 @@ claude mcp remove --scope user agentic-hil
 
 ---
 
-## 能力验证状态（v0.0.9）
+## 能力验证状态（v0.0.10）
 
 > 状态定义：`Implemented`（已实现）/ `Simulator Validated`（模拟验证）/
 > `Real Hardware Validated`（真机验证）/ `Experimental` / `Not Implemented`

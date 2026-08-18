@@ -75,7 +75,28 @@ $report.agents.qoder = [ordered]@{
     }
 }
 
-# 3. Antigravity CLI / Gemini Code & Claude Code Global Skills
+# 3. Antigravity CLI / Gemini 全局 MCP 配置与 Skills
+$antigravityConfigDir = Join-Path $env:USERPROFILE '.gemini\config'
+$antigravityMcpConfigFile = Join-Path $antigravityConfigDir 'mcp_config.json'
+if (Test-Path -LiteralPath $antigravityConfigDir) {
+    try {
+        $existingJson = if (Test-Path -LiteralPath $antigravityMcpConfigFile) {
+            Get-Content -LiteralPath $antigravityMcpConfigFile -Raw -Encoding UTF8 | ConvertFrom-Json
+        } else {
+            [pscustomobject]@{ mcpServers = [pscustomobject]@{} }
+        }
+        if (-not $existingJson.PSObject.Properties['mcpServers']) {
+            $existingJson | Add-Member -MemberType NoteProperty -Name 'mcpServers' -Value ([pscustomobject]@{})
+        }
+        $existingJson.mcpServers | Add-Member -MemberType NoteProperty -Name 'firmwareloop' -Value ([pscustomobject]@{ command = "fwloop" }) -Force
+        $existingJson.mcpServers | Add-Member -MemberType NoteProperty -Name 'agentic-hil' -Value ([pscustomobject]@{ command = "agentic-hil"; args = @("mcp-stdio") }) -Force
+        $updatedJsonStr = ConvertTo-Json -InputObject $existingJson -Depth 10
+        [System.IO.File]::WriteAllText($antigravityMcpConfigFile, $updatedJsonStr, [System.Text.Encoding]::UTF8)
+    } catch {
+        # ignore non-fatal config write error
+    }
+}
+
 $antigravitySkillsRoot = Join-Path $env:USERPROFILE '.gemini\antigravity-cli\skills'
 $claudeSkillsRoot = Join-Path $env:USERPROFILE '.claude\skills'
 
@@ -104,10 +125,10 @@ if (Test-Path -LiteralPath $sourceSkillsDir) {
 }
 
 $report.agents.antigravity = [ordered]@{
-    mcp_config_path = (Join-Path $repoRoot '.mcp.json')
+    mcp_config_path = $antigravityMcpConfigFile
     global_skills_installed = ($installedSkills.Count -gt 0)
     installed_skills = $installedSkills
-    note = "Antigravity automatically discovers project-level .mcp.json and global skills."
+    note = "Antigravity global mcp_config.json and skills configured."
 }
 
 # Optional: write project-level .mcp.json

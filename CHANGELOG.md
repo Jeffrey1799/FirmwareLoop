@@ -3,6 +3,22 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/) 与
 [Semantic Versioning](https://semver.org/)。版本记录按日期倒序。
 
+## [0.0.10] - 2026-08-18
+
+v0.0.10 目标：打通 Google Antigravity / Gemini CLI 全局 MCP 自动注入，重构 README 为 3 步极速起步指南并建立核心命令职责速查体系。
+
+### Added
+
+- **Antigravity 全局 MCP 自动注入与管理**：
+  - `tools/setup-agent-mcp.ps1` 与 `fwloop setup` 自动向 `~/.gemini/config/mcp_config.json` 注入 `firmwareloop` 与 `agentic-hil` 双层服务
+  - 自动同步所有技能包至 Antigravity 全局技能库（`~/.gemini/antigravity-cli/skills/`）
+- **README.md 极速起步深度重构**：
+  - 重构为「极速起步（3 步搞定）」（全局安装 -> Agent 注册 -> 工程开启自动化）
+  - 新增「核心命令职责速查表」，明确 `fwloop setup`（全局 1 次）与 `fwloop init`（每项目 1 次）的职责划分
+  - 清理重复代码块，确保所有指令纯净可一键复制
+- **测试与构建覆盖**：
+  - 11 项单元测试 100% 通过，成功构建 wheel 与 sdist 发布包
+
 ## [0.0.9] - 2026-08-18
 
 v0.0.9 目标：新增 `fwloop-adapter` 自定义/私有调试与烧录工具接入专属 Skill，支持纯 GUI 上位机 4 级阶梯引导与多 Agent 技能库全自动注入。
