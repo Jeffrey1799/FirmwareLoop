@@ -1,5 +1,5 @@
 """
-test_mcp_server.py - Unit tests for FirmwareLoop Workflow MCP Server (v0.0.4).
+test_mcp_server.py - Unit tests for FirmwareLoop Workflow MCP Server (v0.0.5).
 """
 
 import json
@@ -28,7 +28,7 @@ def test_mcp_initialize():
     assert res is not None
     assert res["id"] == 1
     assert res["result"]["serverInfo"]["name"] == "firmwareloop"
-    assert res["result"]["serverInfo"]["version"] == "0.0.4"
+    assert res["result"]["serverInfo"]["version"] == "0.0.5"
     assert "tools" in res["result"]["capabilities"]
 
 

@@ -7,6 +7,9 @@ venv/
 .tmp/
 __pycache__/
 *.pyc
+*.egg-info/
+dist/
+build/
 
 # Build outputs (schemas and logs are produced by tools/; keep the tree clean)
 artifacts/build/*

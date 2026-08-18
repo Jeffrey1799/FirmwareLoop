@@ -81,47 +81,66 @@ uart.log / measurements.json / final-report.json）。
 | 安全策略 | limits.yaml + 权限模型 | 无 | 无 | 弱 |
 | 迭代闭环 | build→测→改→重测（≤3 次） | 无 | 部分 | 无 |
 
-## 双层 MCP 架构 (Two-Tier MCP)
+## 双层 MCP 架构与接入模式
 
-FirmwareLoop 提供开箱即用的**双层 MCP 架构**，支持 AI Coding Agent（Claude Code、Antigravity、Qoder 等）在不同抽象层级灵活调度：
+FirmwareLoop 提供开箱即用的**双层 MCP 架构**：
+1. **上层工作流 MCP (`firmwareloop`)**：面向工程构建（Keil/CMake/Make 等 7 大后端）、pytest 12项自动化 HIL 测试、安全测量与全链路验收。
+2. **下层硬件驱动 MCP (`agentic-hil`)**：面向物理探针（ST-LINK / J-Link）、JTAG/SWD 固件刷写、芯片复位、串口会话与符号级断点调试。
 
-1. **上层工作流 MCP (`firmwareloop`)**：面向工程构建（Keil/CMake/Make 等 7 大后端）、pytest 12项自动化 HIL 测试、安全测量与全链路验收（`tools/fw_mcp_server.py`）。
-2. **下层硬件驱动 MCP (`agentic-hil`)**：面向物理探针、JTAG/SWD 固件刷写、芯片复位、串口会话与符号级断点调试。
+---
 
-```powershell
-# 一键查看或生成各大 Agent 的 MCP 注册命令
-.\tools\setup-agent-mcp.ps1
-```
+### 接入模式一：免克隆即时运行（推荐，需安装 `uv`）
 
-## 全局共享 MCP 接入模式（跨工程使用指南）
+无需手动 `git clone`，在任意电脑、任意单片机工程目录下，直接配置 Agent 通过 `uvx` 即时运行：
 
-如果你在电脑上有自己的多个 STM32 / Keil / ESP32 独立固件工程，**无需在每个工程中重复克隆本项目**。只需将 FirmwareLoop 克隆到一个固定的工具目录，并注册为全局 MCP，即可在**任意项目目录**下通过 Agent 调度所有固件构建、烧录、调试与测量能力：
-
-### 1. 克隆与初始化（仅需一次）
-```powershell
-# 克隆到常用工具目录（例如 D:\Tools\FirmwareLoop）
-git clone https://github.com/Jeffrey1799/FirmwareLoop.git D:\Tools\FirmwareLoop
-cd D:\Tools\FirmwareLoop
-
-# 初始化虚拟环境与依赖
-uv venv
-.\.venv\Scripts\activate
-uv pip install pyvisa pyvisa-py pyserial pytest pyocd pyyaml agentic-hil
-```
-
-### 2. 全局注册到各大 Agent
-* **Claude Code CLI**：
+* **Claude Code CLI 注册**：
   ```bash
-  claude mcp add firmwareloop -- "D:\Tools\FirmwareLoop\.venv\Scripts\python.exe" "D:\Tools\FirmwareLoop\tools\fw_mcp_server.py"
-  claude mcp add agentic-hil -- "D:\Tools\FirmwareLoop\.venv\Scripts\agentic-hil.exe" mcp-stdio
+  claude mcp add firmwareloop -- uvx --from git+https://github.com/Jeffrey1799/FirmwareLoop.git firmwareloop
+  claude mcp add agentic-hil -- uvx agentic-hil mcp-stdio
   ```
-* **Qoder IDE**：
-  ```bash
-  qoder.cmd mcp add firmwareloop -- "D:\Tools\FirmwareLoop\.venv\Scripts\python.exe" "D:\Tools\FirmwareLoop\tools\fw_mcp_server.py"
-  qoder.cmd mcp add agentic-hil -- "D:\Tools\FirmwareLoop\.venv\Scripts\agentic-hil.exe" mcp-stdio
+
+* **Qoder IDE / Cursor / Antigravity（项目 `.mcp.json` 配置）**：
+  ```json
+  {
+    "mcpServers": {
+      "firmwareloop": {
+        "command": "uvx",
+        "args": [
+          "--from", "git+https://github.com/Jeffrey1799/FirmwareLoop.git",
+          "firmwareloop"
+        ]
+      },
+      "agentic-hil": {
+        "command": "uvx",
+        "args": ["agentic-hil", "mcp-stdio"]
+      }
+    }
+  }
   ```
-* **Antigravity CLI / Cursor / VS Code**：
-  在任意固件工程根目录下创建 `.mcp.json` 指向该路径，或在全局配置中添加。
+
+---
+
+### 接入模式二：本地全局共享模式（克隆一次，离线可用）
+
+1. **克隆与环境初始化**：
+   ```powershell
+   git clone https://github.com/Jeffrey1799/FirmwareLoop.git D:\Tools\FirmwareLoop
+   cd D:\Tools\FirmwareLoop
+   uv pip install -e .
+   ```
+2. **全局注册到各大 Agent**：
+   * **Claude Code CLI**：
+     ```bash
+     claude mcp add firmwareloop -- "D:\Tools\FirmwareLoop\.venv\Scripts\firmwareloop.exe"
+     claude mcp add agentic-hil -- "D:\Tools\FirmwareLoop\.venv\Scripts\agentic-hil.exe" mcp-stdio
+     ```
+   * **Qoder IDE**：
+     ```bash
+     qoder.cmd mcp add firmwareloop -- "D:\Tools\FirmwareLoop\.venv\Scripts\firmwareloop.exe"
+     qoder.cmd mcp add agentic-hil -- "D:\Tools\FirmwareLoop\.venv\Scripts\agentic-hil.exe" mcp-stdio
+     ```
+
+---
 
 ### 3. 在任意工程中纯对话开发
 在你的任意单片机工程目录下启动 Agent，直接通过自然语言交互：
@@ -140,12 +159,13 @@ uv pip install pyvisa pyvisa-py pyserial pytest pyocd pyyaml agentic-hil
 ├── demo-firmware/    示例固件（CMake；宿主编译模拟 MCU，闭环验证载体）
 ├── demo-make/        示例固件（Make；构建测试载体）
 ├── docs/             DEPENDENCY_MATRIX / REUSE_PLAN / V0.0.2_GAP_VERIFICATION
+├── pyproject.toml    标准 Python 包配置与 CLI 入口声明 (v0.0.5)
 ├── .mcp.example.json 双层 MCP 配置模板（firmwareloop + agentic-hil）
 ├── CLAUDE.md         Claude Code CLI 指南
 └── AI_DEV_GUIDE.md   AGENT 强制规则
 ```
 
-## 能力验证状态（v0.0.4）
+## 能力验证状态（v0.0.5）
 
 > 状态定义：`Implemented`（已实现）/ `Simulator Validated`（模拟验证）/
 > `Real Hardware Validated`（真机验证）/ `Experimental` / `Not Implemented`
@@ -153,6 +173,7 @@ uv pip install pyvisa pyvisa-py pyserial pytest pyocd pyyaml agentic-hil
 | 能力 | 状态 |
 |---|---|
 | 双层 MCP 服务（12 个工作流与硬件工具） | ✅ Implemented + Protocol Validated（28/28 测试通过） |
+| uvx 免克隆即时运行（Zero-Clone Mode） | ✅ Implemented + PEP 517/621 Validated |
 | Build：keil (UV4.exe) / cmake / make / platformio / iar / zephyr / esp-idf | ✅ Implemented + Multi-backend Validated |
 | pytest HIL（12 项，simulator） | ✅ Implemented + Simulator Validated |
 | pytest HIL（real UART） | ⚠️ Implemented（Agentic HIL 插件已就绪）→ Real Hardware Validated 待 DUT |

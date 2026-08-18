@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-fw_mcp_server.py - FirmwareLoop High-Level Workflow & Device MCP Server (v0.0.4).
+fw_mcp_server.py - FirmwareLoop High-Level Workflow & Device MCP Server (v0.0.5).
 
 Exposes high-level firmware engineering and hardware management tools to AI Coding
 Agents (Antigravity CLI, Claude Code CLI, Qoder IDE, Cursor) via the Model Context
@@ -827,7 +827,7 @@ def process_request(req: Dict[str, Any]) -> Optional[Dict[str, Any]]:
                 },
                 "serverInfo": {
                     "name": "firmwareloop",
-                    "version": "0.0.4"
+                    "version": "0.0.5"
                 }
             }
         }

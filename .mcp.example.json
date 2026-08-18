@@ -7,7 +7,7 @@
         "tools\\fw_mcp_server.py"
       ],
       "timeout": 300000,
-      "_comment": "FirmwareLoop Upper-Tier Workflow MCP Server (v0.0.4). Provides 12 firmware engineering and hardware management tools (fw_doctor, fw_configure_lab, fw_scan_hardware, fw_build, fw_flash, fw_reset, fw_run_hil_test, fw_acceptance_scenario, fw_measure, fw_logic_capture, fw_logic_decode, fw_get_evidence)."
+      "_comment": "FirmwareLoop Upper-Tier Workflow MCP Server (v0.0.5). Provides 12 firmware engineering and hardware management tools (fw_doctor, fw_configure_lab, fw_scan_hardware, fw_build, fw_flash, fw_reset, fw_run_hil_test, fw_acceptance_scenario, fw_measure, fw_logic_capture, fw_logic_decode, fw_get_evidence)."
     },
     "agentic-hil": {
       "type": "stdio",

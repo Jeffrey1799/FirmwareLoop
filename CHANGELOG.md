@@ -3,6 +3,17 @@
 本项目遵循 [Keep a Changelog](https://keepachangelog.com/) 与
 [Semantic Versioning](https://semver.org/)。版本记录按日期倒序。
 
+## [0.0.5] - 2026-08-18
+
+v0.0.5 目标：标准 Python 包打包与 CLI 入口点注册，支持 uvx 免克隆即时运行。
+
+### Added
+
+- **标准打包规范**：新增 `pyproject.toml`（遵循 PEP 517/621 标准），注册 `firmwareloop` 与 `fw-mcp` CLI 入口点
+- **包模块化**：新增 `tools/__init__.py` 与 `tools/lib/__init__.py`
+- **uvx 免克隆即时运行**：支持 `uvx --from git+https://github.com/Jeffrey1799/FirmwareLoop.git firmwareloop` 即拉即用
+- **文档与示例**：更新 README.md 增加 uvx 免克隆一键配置示例
+
 ## [0.0.4] - 2026-08-18
 
 v0.0.4 目标：交互式台架配置与硬件管理工具增强，实现零命令行干预的 Agent 对话式开发与调试。
